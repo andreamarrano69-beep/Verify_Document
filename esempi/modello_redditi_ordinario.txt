@@ -1,0 +1,12 @@
+AGENZIA DELLE ENTRATE - REDDITI 2026 PERSONE FISICHE
+Periodo d'imposta 2025
+Codice fiscale RSSMRA80A01H501U
+
+QUADRO RE - Redditi di lavoro autonomo derivanti dall'esercizio di arti e professioni
+RE2 Compensi 60.000
+RE23 Reddito netto da lavoro autonomo 41.500
+
+QUADRO RN - Determinazione dell'IRPEF
+RN1 Reddito complessivo 41.500
+RN4 Imposta lorda 11.335
+RN26 Imposta netta 10.900

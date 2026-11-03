@@ -1,0 +1,8 @@
+# Lettura PDF con testo (buste paga e modelli generati da software)
+pdfplumber>=0.11
+# Rendering pagine PDF in immagini per l'OCR (nessuna dipendenza esterna)
+pypdfium2>=4.0
+# --- Opzionale: OCR per documenti scansionati/foto (carta d'identità, ecc.) ---
+# Richiede anche il programma Tesseract con lingua italiana installato nel sistema.
+# pytesseract>=0.3
+# Pillow>=10

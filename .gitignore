@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+# Mai versionare documenti reali dei clienti (dati personali / GDPR)
+documenti/
+clienti/
+*.pdf
+!esempi/*.pdf
+report/

@@ -39,9 +39,6 @@ ETICHETTE = {
     "ritenute_irpef": [r"ritenut[ae]\s+irpef", r"(?m)^\s*irpef\b(?!\s+(?:lorda|netta))"],
     "addizionale_regionale": [r"addizionale\s+regionale"],
     "addizionale_comunale": [r"addizionale\s+comunale"],
-    "cessione_quinto": [r"cessione\s+(?:del\s+)?(?:quinto|v)", r"quota\s+cedibile"],
-    "prestito_delega": [r"delegazione\s+di\s+pagamento", r"prestito\s+(?:inps|pensionistico)", r"\bdelega\b"],
-    "pignoramento": [r"pignorament[oi]", r"trattenuta\s+per\s+pignoramento"],
     "altre_trattenute": [r"trattenute\s+sindacali", r"quota\s+sindacale", r"conguaglio\s+(?:a\s+)?debito"],
     "totale_trattenute": [r"totale\s+trattenute", r"totale\s+ritenute"],
     "importo_netto": [r"importo\s+(?:mensile\s+)?netto", r"netto\s+(?:da\s+)?(?:pagare|accreditare|in\s+pagamento)",
@@ -127,13 +124,16 @@ def analizza(testo: str) -> Report:
     # --- Importi -----------------------------------------------------------------------
     for chiave, etichette in ETICHETTE.items():
         d[chiave] = cerca_importo(testo, etichette, solo_riga=True)
+    from .impegni import controlla_impegni, leggi_impegni
+
+    d.update(leggi_impegni(testo))
     # rata con tredicesima: solo nei cedolini, se c'è una voce "tredicesima" con importo
     d["tredicesima"] = None if obis else (bool(re.search(
         r"(?im)^\s*(?:importo\s+)?(?:tredicesima|13\s*[ªa°^]\s*(?:mensilit[aà]|rata))\b[^\n]*\d+,\d{2}", testo)) or None)
 
     lordo, netto = d["importo_lordo"], d["importo_netto"]
     voci = ["ritenute_irpef", "addizionale_regionale", "addizionale_comunale", "cessione_quinto",
-            "prestito_delega", "pignoramento", "altre_trattenute"]
+            "delegazione_pagamento", "pignoramento", "altre_trattenute"]
     trattenute = d["totale_trattenute"]
     if trattenute is None and any(d[v] is not None for v in voci):
         trattenute = sum((d[v] or 0 for v in voci), Decimal(0))
@@ -175,15 +175,12 @@ def analizza(testo: str) -> Report:
                            f"{formatta_euro(d['ritenute_irpef'])} entro il massimo {formatta_euro(massimo)} "
                            f"(IRPEF lorda su {MENSILITA} mensilità, senza detrazioni)")
 
-    # Impegni già presenti
-    impegni = [(k, d[k]) for k in ("cessione_quinto", "prestito_delega") if d[k]]
-    if impegni:
-        elenco = ", ".join(f"{k.replace('_', ' ')} {formatta_euro(v)}" for k, v in impegni)
-        r.aggiungi("Cessione del quinto / prestiti", Esito.ATTENZIONE,
-                   f"Già presenti trattenute per finanziamenti: {elenco} al mese")
-    if d["pignoramento"]:
-        r.aggiungi("Pignoramento", Esito.ATTENZIONE,
-                   f"Trattenuta per pignoramento: {formatta_euro(d['pignoramento'])} al mese")
+    # Cessione del quinto, deleghe, pignoramenti e quinto cedibile
+    if lordo and not d["tredicesima"]:
+        base = lordo - sum((d[k] or 0) for k in ("ritenute_irpef", "addizionale_regionale", "addizionale_comunale"))
+        controlla_impegni(r, base, "lordo − IRPEF − addizionali", pensione=True)
+    else:
+        controlla_impegni(r, None, "", pensione=True)
 
     # --- Importo mensile ----------------------------------------------------------------
     if lordo and d["tredicesima"]:

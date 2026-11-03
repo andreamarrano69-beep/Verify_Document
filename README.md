@@ -50,6 +50,24 @@ Il netto mensile compare anche nell'elenco dei documenti, nella stampa da riga d
 
 ![Pensione](docs/pensione.png)
 
+## Cessione del quinto, deleghe e pignoramenti
+
+Su **buste paga** e **cedolini della pensione** il programma individua le trattenute per
+cessione del quinto, delegazione di pagamento (prestito con delega) e pignoramento, e calcola
+il **quinto cedibile** e quanto è **ancora disponibile** per un nuovo finanziamento:
+
+| Controllo | Regola (DPR 180/1950) |
+|---|---|
+| Rata di cessione | al massimo 1/5 del netto (lordo − contributi − IRPEF − addizionali) |
+| Cessione + delegazione | al massimo 2/5 |
+| Cessione + pignoramento | al massimo metà del netto |
+| Confronto tra mesi | la rata è fissa: rate diverse, cessioni iniziate o estinte vengono segnalate |
+
+Una rata oltre i limiti di legge è segnalata come **errore** (documento da verificare).
+Per le pensioni la quota cedibile deve inoltre lasciare almeno il trattamento minimo INPS.
+
+![Cessione del quinto](docs/cessione.png)
+
 ## Controllo autenticità dei PDF
 
 Oltre a verificare che i calcoli tornino, il programma esamina il file PDF e assegna un
@@ -149,6 +167,7 @@ verify_document/
   busta_paga.py       analisi cedolino
   modello_redditi.py  analisi Modello Redditi PF
   pensione.py         analisi cedolino pensione e certificato ObisM
+  impegni.py          cessione del quinto, deleghe, pignoramenti, quinto cedibile
   cu.py               analisi Certificazione Unica (scaglioni IRPEF per anno in SCAGLIONI_IRPEF)
   anagrafica.py       analisi documenti d'identità
   autenticita.py      esame del file PDF (segni di alterazione)

@@ -49,6 +49,8 @@ ETICHETTE = {
     "imponibile_fiscale": [_NO_PROGR + r"imponibile\s+fiscale(?!\s+progr)",
                            _NO_PROGR + r"imponibile\s+irpef(?!\s+progr)", r"imp\.?\s*fisc\.?(?!\s*progr)"],
     "irpef_lorda": [r"irpef\s+lorda"],
+    "addizionale_regionale": [r"addizionale\s+regionale(?!\s+progr)"],
+    "addizionale_comunale": [r"addizionale\s+comunale(?!\s+progr)"],
     "irpef_netta": [r"irpef\s+netta(?!\s+progr)", _NO_PROGR + r"ritenute\s+irpef(?!\s+progr)"],
     # progressivi annui (da gennaio al mese corrente): usati nel confronto tra buste paga
     "progressivo_imponibile_fiscale": [
@@ -251,6 +253,22 @@ def analizza(testo: str) -> Report:
         else:
             detr = d["irpef_lorda"] - d["irpef_netta"]
             r.aggiungi("IRPEF", Esito.OK, f"Detrazioni applicate nel mese: {formatta_euro(detr)}")
+
+    # --- Cessione del quinto, deleghe, pignoramenti ----------------------------
+    from .impegni import controlla_impegni, leggi_impegni
+
+    d.update(leggi_impegni(testo))
+    contr_mese, irpef_mese = d["contributi_dipendente"], d["irpef_netta"]
+    if comp and contr_mese is not None and irpef_mese is not None:
+        base = comp - contr_mese - irpef_mese - (d["addizionale_regionale"] or 0) - (d["addizionale_comunale"] or 0)
+        descr = "lordo − contributi − IRPEF − addizionali"
+    elif netto:
+        base = netto + sum((d[k] or 0) for k in ("cessione_quinto", "delegazione_pagamento", "pignoramento"))
+        descr = "netto in busta + rate già trattenute (stima)"
+    else:
+        base, descr = None, ""
+    if not d.get("mensilita_aggiuntiva"):
+        controlla_impegni(r, base, descr)
 
     if netto:
         r.aggiungi("Netto mensile", Esito.INFO, f"Netto percepito: {formatta_euro(netto)}")

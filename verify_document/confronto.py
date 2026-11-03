@@ -189,6 +189,7 @@ def _confronta_buste(r: Report, buste: list[Documento], gruppo: str) -> list[dic
 
     _progressivi(r, [visti[k] for k in mesi], gruppo)
     _arrotondamenti(r, [visti[k] for k in mesi], gruppo)
+    _impegni_nel_tempo(r, [visti[k] for k in mesi], gruppo)
     _andamento_netto(r, [visti[k] for k in mesi], gruppo)
 
     righe = []
@@ -243,6 +244,35 @@ def _progressivi(r: Report, buste: list[Documento], gruppo: str) -> None:
                    gruppo=gruppo)
     elif len(buste) >= 2:
         r.aggiungi("Progressivi annui", Esito.INFO, "Progressivi non trovati nelle buste paga", gruppo=gruppo)
+
+
+def _impegni_nel_tempo(r: Report, docs: list[Documento], gruppo: str) -> None:
+    """La rata di cessione/delega/pignoramento è fissa: deve essere uguale in tutti i mesi in cui compare."""
+    from .impegni import NOMI
+
+    if len(docs) < 2:
+        return
+    for chiave, nome in NOMI.items():
+        valori = [(doc.report.dati.get("periodo"), doc.report.dati.get(chiave)) for doc in docs]
+        presenti = [(p, v) for p, v in valori if v]
+        if not presenti:
+            continue
+        titolo = nome[0].upper() + nome[1:]
+        importi = {v for _, v in presenti}
+        if len(importi) > 1:
+            r.aggiungi(titolo, Esito.ATTENZIONE,
+                       "Rata diversa tra i mesi: " + ", ".join(f"{p} {formatta_euro(v)}" for p, v in presenti)
+                       + " (la rata è fissa: rinegoziazione, nuova pratica o documento alterato?)", gruppo=gruppo)
+        assenti = [p for p, v in valori if not v]
+        if assenti:
+            primo = presenti[0][0]
+            r.aggiungi(f"{titolo}: variazioni", Esito.INFO,
+                       f"Presente in {len(presenti)} mesi su {len(valori)} (da {primo}); assente in: {', '.join(assenti)}"
+                       " — iniziata o estinta nel periodo", gruppo=gruppo)
+        elif len(importi) == 1:
+            r.aggiungi(titolo, Esito.INFO,
+                       f"Rata costante di {formatta_euro(next(iter(importi)))} su tutti i {len(valori)} mesi",
+                       gruppo=gruppo)
 
 
 def _consecutivi(b1: Documento, b2: Documento) -> bool:
@@ -478,6 +508,9 @@ def _confronta_pensioni(r: Report, pensioni: list[Documento], gruppo: str) -> li
             else:
                 r.aggiungi(f"{nome}: importo netto", Esito.OK,
                            f"Netto stabile su {len(netti)} cedolini (circa {formatta_euro(mediana)})", gruppo=gruppo)
+
+    _impegni_nel_tempo(r, sorted((p for p in pensioni if p.anno_mese and not p.report.dati.get("tredicesima")),
+                                 key=lambda p: p.anno_mese), gruppo)
 
     righe = []
     for p in sorted(pensioni, key=lambda p: (p.anno_mese or (_anno_pensione(p) or 0, 0))):

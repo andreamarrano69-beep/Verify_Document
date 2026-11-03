@@ -8,6 +8,8 @@ Programma Python **locale** (nessun dato inviato su internet) che legge e verifi
 | **Modello Redditi PF (ex Unico)** | Quadri compilati, regime fiscale, reddito, imposte | Regime (forfettario, semplificato, ordinario, professionista, dipendente), reddito **mensile** lordo e netto; per il forfettario: soglia 85.000 €, coefficiente di redditività, aliquota 5%/15% |
 | **Documento d'identità** (CIE, carta, patente, passaporto, tessera sanitaria) | Cognome, nome, nascita, sesso, numero, rilascio, scadenza, CF | CF valido e coerente con cognome/nome/data/sesso, documento scaduto o in scadenza |
 
+Per i **PDF** viene inoltre esaminato il file stesso alla ricerca di **segni di alterazione** (vedi sotto).
+
 Formati: PDF con testo (generati dai software paghe/Entratel), PDF scansionati e immagini (con OCR opzionale), file `.txt`.
 
 ## Installazione
@@ -30,6 +32,30 @@ pip install -r requirements.txt
 ```
 
 OCR (solo per scansioni/foto): installare [Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) con la lingua italiana, poi `pip install pytesseract Pillow`.
+
+## Controllo autenticità dei PDF
+
+Oltre a verificare che i calcoli tornino, il programma esamina il file PDF e assegna un
+**indice di rischio di alterazione** (BASSO / MEDIO / ALTO):
+
+| Indizio | Punti |
+|---|---|
+| Creato o salvato con un editor PDF online (iLovePDF, Smallpdf, Sejda, Canva…) | 3 |
+| Importo scritto con un carattere diverso dal resto del documento | 3 |
+| Testo scritto sopra altro testo (es. «6» coperto da «9») | 3 |
+| Annotazioni/caselle di testo aggiunte sopra la pagina | 3 |
+| File creato prima del periodo a cui si riferisce | 3 |
+| Programma di modifica PDF (Acrobat Pro, Foxit, PDF-XChange…) o Word/LibreOffice | 2 |
+| Data di modifica diversa dalla creazione / salvataggi successivi | 2 |
+| Stampante virtuale PDF, metadati assenti, campi compilabili, solo scansione | 1 |
+| Importo isolato in grassetto/corsivo (spesso normale per il netto) | 1 |
+
+0 punti = basso, 1–2 = medio, 3 o più = alto (chiedere il documento originale).
+
+![Controllo autenticità](docs/autenticita.png)
+
+> Nessun controllo automatico può **certificare** l'originalità: lo strumento segnala anomalie
+> che un operatore deve valutare. Un indice basso non garantisce che il documento sia autentico.
 
 ## Interfaccia grafica
 
@@ -62,6 +88,7 @@ Codice di uscita: `0` tutto ok, `1` almeno un controllo in ERRORE, `2` file non 
 ## Test
 
 ```bash
+pip install -r requirements-dev.txt     # reportlab e pypdf, per generare i PDF falsificati di prova
 python -m unittest discover -s tests -v
 ```
 
@@ -74,6 +101,7 @@ verify_document/
   busta_paga.py       analisi cedolino
   modello_redditi.py  analisi Modello Redditi PF
   anagrafica.py       analisi documenti d'identità
+  autenticita.py      esame del file PDF (segni di alterazione)
   report.py           esiti dei controlli
   cli.py              riga di comando
   gui.py              interfaccia grafica (Tkinter)

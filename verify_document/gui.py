@@ -22,8 +22,8 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from . import __version__
-from .cli import analizza_testo
-from .estrazione import ErroreEstrazione, estrai_testo
+from .cli import analizza_documento
+from .estrazione import ErroreEstrazione
 from .report import SIMBOLI, Esito, Report, etichetta_campo, formatta_valore, report_testuale
 
 TIPI = {
@@ -44,12 +44,15 @@ COLORI = {
 RIEPILOGO = {
     "Busta": [("netto", "Netto in busta"), ("periodo", "Periodo"),
               ("codice_fiscale_dipendente", "CF dipendente"), ("partita_iva_azienda", "P.IVA azienda"),
-              ("data_assunzione", "Assunzione"), ("totale_competenze", "Lordo")],
+              ("data_assunzione", "Assunzione"), ("totale_competenze", "Lordo"),
+              ("rischio_alterazione", "Rischio alterazione")],
     "Modello": [("regime_fiscale", "Regime fiscale"), ("reddito_mensile_lordo", "Reddito mensile"),
                 ("reddito_mensile_netto", "Mensile netto imposte"), ("periodo_imposta", "Anno d'imposta"),
-                ("codice_fiscale_contribuente", "Codice fiscale"), ("reddito_annuo", "Reddito annuo")],
+                ("codice_fiscale_contribuente", "Codice fiscale"), ("reddito_annuo", "Reddito annuo"),
+                ("rischio_alterazione", "Rischio alterazione")],
     "Carta": [("cognome", "Cognome"), ("nome", "Nome"), ("codice_fiscale", "Codice fiscale"),
-              ("data_scadenza", "Scadenza"), ("numero_documento", "N. documento")],
+              ("data_scadenza", "Scadenza"), ("numero_documento", "N. documento"),
+              ("rischio_alterazione", "Rischio alterazione")],
 }
 for _t in ("Patente", "Passaporto", "Tessera", "Documento"):
     RIEPILOGO[_t] = RIEPILOGO["Carta"]
@@ -179,6 +182,8 @@ class App:
                                       stretch=col == "dettaglio")
         for esito, (fg, bg) in COLORI.items():
             self.tab_controlli.tag_configure(esito.value, foreground=fg, background=bg)
+        self.tab_controlli.tag_configure("gruppo", foreground="#ffffff", background="#57606a",
+                                         font=("Segoe UI", 9, "bold"))
         self._con_scrollbar(f1, self.tab_controlli)
         self.tab_controlli.bind("<Double-1>", self._mostra_dettaglio_controllo)
         self.schede.add(f1, text="  Controlli  ")
@@ -260,8 +265,7 @@ class App:
         def lavoro():
             ris = Risultato(percorso)
             try:
-                ris.testo = estrai_testo(percorso, usa_ocr=ocr)
-                ris.report = analizza_testo(ris.testo, tipo)
+                ris.testo, ris.report = analizza_documento(percorso, tipo, usa_ocr=ocr)
             except (ErroreEstrazione, ValueError) as e:
                 ris.errore = str(e)
             except Exception as e:  # errore imprevisto: non bloccare l'interfaccia
@@ -323,9 +327,11 @@ class App:
         self.lbl_titolo.config(text=f"{nome}  ·  {r.tipo_documento}")
         fg, bg = COLORI[r.esito_globale]
         self.lbl_esito.config(text=f"{SIMBOLI[r.esito_globale]} {r.esito_globale.value}", fg=fg, bg=bg)
-        for c in r.controlli:
-            self.tab_controlli.insert("", "end", values=(SIMBOLI[c.esito], c.nome, c.dettaglio),
-                                      tags=(c.esito.value,))
+        for gruppo, controlli in r.gruppi().items():
+            self.tab_controlli.insert("", "end", values=("", gruppo.upper(), ""), tags=("gruppo",))
+            for c in controlli:
+                self.tab_controlli.insert("", "end", values=(SIMBOLI[c.esito], c.nome, c.dettaglio),
+                                          tags=(c.esito.value,))
         for k, v in r.dati.items():
             self.tab_dati.insert("", "end", values=(etichetta_campo(k), formatta_valore(k, v)),
                                  tags=("vuoto",) if v is None else ())
@@ -350,6 +356,8 @@ class App:
         sel = self.tab_controlli.selection()
         if sel:
             _, nome, dettaglio = self.tab_controlli.item(sel[0], "values")
+            if not dettaglio:
+                return
             messagebox.showinfo(nome, dettaglio, parent=self.root)
 
     def rianalizza(self) -> None:

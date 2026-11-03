@@ -17,6 +17,8 @@ class Esito(str, Enum):
     INFO = "INFO"
 
 
+GRUPPO_DATI = "Verifica dei dati"
+
 SIMBOLI = {Esito.OK: "✔", Esito.ATTENZIONE: "⚠", Esito.ERRORE: "✘", Esito.INFO: "ℹ"}
 
 
@@ -25,6 +27,7 @@ class Controllo:
     nome: str
     esito: Esito
     dettaglio: str
+    gruppo: str = GRUPPO_DATI
 
 
 @dataclass
@@ -33,8 +36,14 @@ class Report:
     dati: dict = field(default_factory=dict)
     controlli: list[Controllo] = field(default_factory=list)
 
-    def aggiungi(self, nome: str, esito: Esito, dettaglio: str) -> None:
-        self.controlli.append(Controllo(nome, esito, dettaglio))
+    def aggiungi(self, nome: str, esito: Esito, dettaglio: str, gruppo: str = GRUPPO_DATI) -> None:
+        self.controlli.append(Controllo(nome, esito, dettaglio, gruppo))
+
+    def gruppi(self) -> dict[str, list[Controllo]]:
+        out: dict[str, list[Controllo]] = {}
+        for c in self.controlli:
+            out.setdefault(c.gruppo, []).append(c)
+        return out
 
     @property
     def esito_globale(self) -> Esito:
@@ -62,7 +71,7 @@ class Report:
             "esito_globale": self.esito_globale.value,
             "dati": conv(self.dati),
             "controlli": [
-                {"nome": c.nome, "esito": c.esito.value, "dettaglio": c.dettaglio}
+                {"gruppo": c.gruppo, "nome": c.nome, "esito": c.esito.value, "dettaglio": c.dettaglio}
                 for c in self.controlli
             ],
         }
@@ -105,9 +114,10 @@ def report_testuale(nome_file: str, r: Report) -> str:
     for k, v in r.dati.items():
         if v is not None:
             righe.append(f"  {etichetta_campo(k):<34} {formatta_valore(k, v)}")
-    righe += ["", "CONTROLLI"]
-    for c in r.controlli:
-        righe.append(f"  {SIMBOLI[c.esito]} {c.nome:<32} {c.dettaglio}")
+    for gruppo, controlli in r.gruppi().items():
+        righe += ["", gruppo.upper()]
+        for c in controlli:
+            righe.append(f"  {SIMBOLI[c.esito]} {c.nome:<32} {c.dettaglio}")
     righe += ["", f"ESITO COMPLESSIVO: {SIMBOLI[r.esito_globale]} {r.esito_globale.value}", ""]
     return "\n".join(righe)
 

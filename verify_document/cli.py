@@ -37,8 +37,21 @@ def analizza_testo(testo: str, tipo: str = "auto") -> Report:
     return ANALIZZATORI[tipo].analizza(testo)
 
 
+def analizza_documento(
+    percorso: str | Path, tipo: str = "auto", usa_ocr: bool = True, autenticita: bool = True
+) -> tuple[str, Report]:
+    """Estrae il testo, analizza i dati e, per i PDF, esamina il file in cerca di alterazioni."""
+    testo = estrai_testo(percorso, usa_ocr=usa_ocr)
+    report = analizza_testo(testo, tipo)
+    if autenticita and Path(percorso).suffix.lower() == ".pdf":
+        from .autenticita import aggiungi_al_report
+
+        aggiungi_al_report(report, percorso)
+    return testo, report
+
+
 def analizza_file(percorso: str | Path, tipo: str = "auto", usa_ocr: bool = True) -> Report:
-    return analizza_testo(estrai_testo(percorso, usa_ocr=usa_ocr), tipo)
+    return analizza_documento(percorso, tipo, usa_ocr)[1]
 
 
 def stampa_report(nome_file: str, r: Report) -> None:
@@ -55,6 +68,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="output in formato JSON")
     parser.add_argument("--no-ocr", action="store_true", help="non usare l'OCR")
     parser.add_argument("--testo", action="store_true", help="mostra il testo estratto (debug)")
+    parser.add_argument("--no-autenticita", action="store_true",
+                        help="non esaminare il file PDF in cerca di alterazioni")
     parser.add_argument("--version", action="version", version=__version__)
     args = parser.parse_args(argv)
 
@@ -62,10 +77,9 @@ def main(argv: list[str] | None = None) -> int:
     risultati = []
     for f in args.file:
         try:
-            testo = estrai_testo(f, usa_ocr=not args.no_ocr)
+            testo, r = analizza_documento(f, args.tipo, not args.no_ocr, not args.no_autenticita)
             if args.testo:
                 print(testo)
-            r = analizza_testo(testo, args.tipo)
         except (ErroreEstrazione, ValueError) as e:
             print(f"[{f}] ERRORE: {e}", file=sys.stderr)
             codice_uscita = 2

@@ -12,9 +12,20 @@ Formati: PDF con testo (generati dai software paghe/Entratel), PDF scansionati e
 
 ## Installazione
 
+Linux / macOS:
+
 ```bash
 python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Windows (PowerShell / terminale di VS Code):
+
+```powershell
+python -m venv .venv
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 

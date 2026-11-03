@@ -8,5 +8,6 @@ RE23 Reddito netto da lavoro autonomo 41.500
 
 QUADRO RN - Determinazione dell'IRPEF
 RN1 Reddito complessivo 41.500
-RN4 Imposta lorda 11.335
+RN4 Reddito imponibile 41.500
+RN5 Imposta lorda 11.165
 RN26 Imposta netta 10.900

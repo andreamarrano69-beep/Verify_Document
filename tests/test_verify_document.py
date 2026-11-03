@@ -124,9 +124,12 @@ class TestModelloRedditi(unittest.TestCase):
     def test_ordinario(self):
         r = modello_redditi.analizza(leggi("modello_redditi_ordinario.txt"))
         self.assertIn("Lavoro autonomo", r.dati["regime_fiscale"])
-        self.assertEqual(r.dati["reddito_annuo"], Decimal("41500"))
-        self.assertEqual(r.dati["reddito_mensile_lordo"], Decimal("3458.33"))
-        self.assertEqual(r.dati["reddito_mensile_netto"], Decimal("2550.00"))
+        # reddito complessivo 41.500 + affitti a cedolare secca 9.600
+        self.assertEqual(r.dati["reddito_annuo"], Decimal("51100"))
+        self.assertEqual(r.dati["reddito_mensile_lordo"], Decimal("4258.33"))
+        # imposte: IRPEF netta 10.300 + cedolare 2.016 + addizionali 692 + 320
+        self.assertEqual(r.dati["reddito_mensile_netto"], Decimal("3147.67"))
+        self.assertEqual(r.esito_globale, Esito.OK, r.to_dict())
 
 
 class TestAnagrafica(unittest.TestCase):

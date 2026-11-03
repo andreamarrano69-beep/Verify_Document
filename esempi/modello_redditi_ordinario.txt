@@ -4,10 +4,24 @@ Codice fiscale RSSMRA80A01H501U
 
 QUADRO RE - Redditi di lavoro autonomo derivanti dall'esercizio di arti e professioni
 RE2 Compensi 60.000
+RE20 Totale spese 18.500
 RE23 Reddito netto da lavoro autonomo 41.500
+
+QUADRO RB - Redditi dei fabbricati
+RB11 Reddito imponibile cedolare secca 9.600
+RB11 Imposta cedolare secca 2.016
 
 QUADRO RN - Determinazione dell'IRPEF
 RN1 Reddito complessivo 41.500
-RN4 Reddito imponibile 41.500
-RN5 Imposta lorda 11.165
-RN26 Imposta netta 10.900
+RN3 Oneri deducibili 1.500
+RN4 Reddito imponibile 40.000
+RN5 Imposta lorda 10.640
+RN22 Totale detrazioni 340
+RN26 Imposta netta 10.300
+RN33 Ritenute totali 8.000
+RN38 Acconti versati 1.500
+RN45 Imposta a debito 800
+
+QUADRO RV - Addizionali regionale e comunale all'IRPEF
+RV2 Addizionale regionale all'IRPEF dovuta 692
+RV10 Addizionale comunale all'IRPEF dovuta 320

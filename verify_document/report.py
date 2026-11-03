@@ -97,7 +97,7 @@ def formatta_valore(chiave: str, v) -> str:
 
 
 _PAROLE = {
-    "cf": "CF", "lm": "(quadro LM)", "irpef": "IRPEF", "iva": "IVA", "inps": "INPS",
+    "cf": "CF", "lm": "(quadro LM)", "re": "(quadro RE)", "rg": "(quadro RG)", "irpef": "IRPEF", "iva": "IVA", "inps": "INPS",
     "redditivita": "redditività", "eta": "età",
 }
 

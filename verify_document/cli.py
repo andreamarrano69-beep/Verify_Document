@@ -78,6 +78,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="crea il report PDF (con il confronto se i documenti sono più di uno)")
     parser.add_argument("--version", action="version", version=__version__)
     args = parser.parse_args(argv)
+    for flusso in (sys.stdout, sys.stderr):  # console Windows non UTF-8: niente errori sui simboli ✔ ✘
+        try:
+            flusso.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
 
     codice_uscita = 0
     risultati = []

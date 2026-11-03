@@ -1,0 +1,69 @@
+# Crea automaticamente VerifyDocument.exe su un computer Windows di GitHub
+# a ogni modifica del codice. Il file .zip si scarica dalla pagina "Actions"
+# (sezione "Artifacts" della singola esecuzione). Con un tag "v*" (es. v0.2.0)
+# viene creata anche una "Release" con lo zip allegato.
+name: Crea exe Windows
+
+on:
+  push:
+    paths:
+      - "verify_document/**"
+      - "tests/**"
+      - "esempi/**"
+      - "assets/**"
+      - "avvia_gui.py"
+      - "VerifyDocument.spec"
+      - "requirements*.txt"
+      - ".github/workflows/crea-exe.yml"
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installa librerie
+        run: python -m pip install -r requirements-dev.txt pyinstaller
+
+      - name: Test automatici
+        run: python -m unittest discover -s tests -v
+
+      - name: Crea il programma
+        run: python -m PyInstaller VerifyDocument.spec --noconfirm --clean --log-level WARN
+
+      - name: Autotest del programma creato
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist\VerifyDocument\VerifyDocument.exe" -ArgumentList "--autotest" -Wait -PassThru
+          Get-Content "$env:TEMP\verify_document_autotest.log"
+          if ($p.ExitCode -ne 0) { exit 1 }
+
+      - name: Crea lo zip
+        shell: pwsh
+        run: |
+          $v = python -c "import verify_document; print(verify_document.__version__)"
+          Compress-Archive -Path dist\VerifyDocument -DestinationPath "VerifyDocument-$v-windows.zip"
+          "VERSIONE=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VerifyDocument-${{ env.VERSIONE }}-windows
+          path: VerifyDocument-*-windows.zip
+          retention-days: 30
+
+      - name: Pubblica la release (solo per i tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" "VerifyDocument-${{ env.VERSIONE }}-windows.zip" --title "Verify Document ${{ github.ref_name }}" --generate-notes

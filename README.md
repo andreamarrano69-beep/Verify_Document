@@ -165,6 +165,31 @@ python -m verify_document.gui
 - si apre a tutto schermo; **F11** schermo intero senza bordi, **Esc** per tornare indietro
 - **⏻ Esci** (o **Ctrl+Q**, o la X della finestra) chiede conferma se ci sono documenti analizzati
 
+## Programma per Windows (.exe)
+
+Il programma si può distribuire come **VerifyDocument.exe**, senza bisogno di installare Python.
+**A ogni modifica del codice il .exe va ricreato**, in uno di questi due modi:
+
+**1. Automatico su GitHub** – a ogni modifica caricata, GitHub crea il .exe su un computer Windows,
+esegue i test e l'autotest e lo mette a disposizione nella pagina **Actions** del repository
+(apri l'ultima esecuzione di "Crea exe Windows" → sezione **Artifacts** → `VerifyDocument-<versione>-windows`).
+Per una versione da distribuire si crea un tag, ad esempio `v0.2.0`: lo zip viene allegato a una **Release**.
+
+**2. Sul tuo PC** – doppio clic su **`crea_exe.bat`** (installa PyInstaller, esegue i test, crea il programma,
+lo verifica e prepara lo zip):
+
+```
+dist\VerifyDocument\VerifyDocument.exe            ← il programma
+dist\VerifyDocument-<versione>-windows.zip         ← da consegnare ai clienti
+```
+
+Il programma è una **cartella** (`VerifyDocument.exe` + cartella `_internal`): va copiata/consegnata intera,
+ad esempio come zip. Per verificare che contenga tutto: `VerifyDocument.exe --autotest`
+(il risultato è in `%TEMP%\verify_document_autotest.log`).
+
+> Windows SmartScreen può mostrare "Windows ha protetto il PC" perché il programma non è firmato:
+> *Ulteriori informazioni → Esegui comunque*. Per la vendita conviene un certificato di firma del codice.
+
 ## Uso da riga di comando
 
 ```bash
@@ -202,6 +227,12 @@ verify_document/
   report.py           esiti dei controlli
   cli.py              riga di comando
   gui.py              interfaccia grafica (Tkinter)
+  autotest.py         verifica che il programma (.exe) contenga tutto il necessario
+avvia_gui.py          avvio del programma (anche per il .exe)
+VerifyDocument.spec   configurazione di PyInstaller
+crea_exe.bat          crea il .exe su Windows (doppio clic)
+assets/               icona del programma
+.github/workflows/    creazione automatica del .exe su GitHub
 esempi/               documenti FITTIZI di prova (esempi/confronto: 3 buste + carta d'identità;
                       esempi/pensionato: cedolini, ObisM, CU INPS e Modello Redditi di un pensionato)
 tests/                test automatici

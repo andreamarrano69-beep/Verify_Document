@@ -114,6 +114,7 @@ class App:
         self.in_corso = 0
 
         root.title(f"Verify Document {__version__}")
+        self._icona()
         root.geometry("1180x720")
         root.minsize(900, 560)
         self._massimizza()
@@ -436,6 +437,15 @@ class App:
             self.lista.item(chiave, values=("in corso…", "", ""), tags=("attesa",))
             self.risultati.pop(chiave, None)
             self._avvia_analisi(Path(chiave), chiave)
+
+    def _icona(self) -> None:
+        from .risorse import risorsa
+
+        try:
+            self._img_icona = tk.PhotoImage(file=str(risorsa("assets/icona.png")))
+            self.root.iconphoto(True, self._img_icona)
+        except (tk.TclError, OSError):
+            pass
 
     def _massimizza(self) -> None:
         """Apre la finestra a tutto schermo (massimizzata, con la barra delle applicazioni visibile)."""

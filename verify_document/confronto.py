@@ -6,6 +6,9 @@ I documenti vengono raggruppati per codice fiscale. Per ogni persona si verifica
 - buste paga: stessa azienda (P.IVA) e stessa data di assunzione, mesi doppi o mancanti,
   progressivi annui coerenti (progressivo del mese = progressivo precedente + imponibile del mese),
   netto e rapporto netto/lordo coerenti con gli altri mesi
+- buste paga ↔ CU dello stesso anno: stesso datore di lavoro e data di assunzione, reddito e
+  ritenute IRPEF uguali ai progressivi di dicembre (o compatibili con la media dei mesi)
+- CU ↔ Modello Redditi: reddito da lavoro dipendente dichiarato = somma delle CU
 - buste paga ↔ Modello Redditi dello stesso anno: reddito da lavoro dipendente compatibile
 - più Modelli Redditi: andamento del reddito e cambi di regime
 """
@@ -38,6 +41,8 @@ class Documento:
             return "busta"
         if t.startswith("Modello Redditi"):
             return "redditi"
+        if t.startswith("Certificazione Unica"):
+            return "cu"
         return "anagrafica"
 
     @property
@@ -99,10 +104,15 @@ def confronta(documenti: list[tuple[str, Report]]) -> EsitoConfronto:
         gruppo = f"Cliente {cf}"
         buste = [d for d in ds if d.tipo == "busta"]
         redditi = [d for d in ds if d.tipo == "redditi"]
+        certificazioni = [d for d in ds if d.tipo == "cu"]
         tipi = sorted({d.report.tipo_documento for d in ds})
         r.aggiungi("Documenti", Esito.INFO, f"{len(ds)}: {', '.join(tipi)}", gruppo=gruppo)
         if buste:
             esito.tabelle[cf] = _confronta_buste(r, buste, gruppo)
+        if buste and certificazioni:
+            _buste_vs_cu(r, buste, certificazioni, gruppo)
+        if certificazioni and redditi:
+            _cu_vs_redditi(r, certificazioni, redditi, gruppo)
         if buste and redditi:
             _buste_vs_redditi(r, buste, redditi, gruppo)
         if len(redditi) > 1:
@@ -279,6 +289,129 @@ def _andamento_netto(r: Report, buste: list[Documento], gruppo: str) -> None:
                    f"Netto e rapporto netto/lordo coerenti su {len(validi)} mesi", gruppo=gruppo)
 
 
+# --- Reddito annuo ricostruito dalle buste paga ----------------------------------------------
+
+@dataclass
+class AnnoDaBuste:
+    reddito: Decimal
+    irpef: Decimal | None
+    metodo: str
+    esatto: bool  # True se ricavato dai progressivi di dicembre
+
+
+def _annuo_da_buste(buste: list[Documento], anno: int) -> AnnoDaBuste | None:
+    dell_anno = [b for b in buste if b.anno_mese and b.anno_mese[0] == anno
+                 and b.report.dati.get("imponibile_fiscale") is not None]
+    if not dell_anno:
+        return None
+    # la busta di dicembre contiene i progressivi dell'intero anno (ultima, se ce n'è più d'una)
+    dicembre = sorted((b for b in dell_anno if b.anno_mese[1] == 12
+                       and b.report.dati.get("progressivo_imponibile_fiscale") is not None),
+                      key=lambda b: b.report.dati["progressivo_imponibile_fiscale"])
+    if dicembre:
+        d = dicembre[-1].report.dati
+        return AnnoDaBuste(d["progressivo_imponibile_fiscale"], d.get("progressivo_irpef"),
+                           "progressivo di dicembre", True)
+    ordinarie = [b for b in dell_anno if not b.report.dati.get("mensilita_aggiuntiva")]
+    if not ordinarie:
+        return None
+    media = sum(b.report.dati["imponibile_fiscale"] for b in ordinarie) / len(ordinarie)
+    return AnnoDaBuste((media * 13).quantize(Decimal("1")), None,
+                       f"media di {len(ordinarie)} mesi × 13 mensilità (stima)", False)
+
+
+def _scostamento(a: Decimal, b: Decimal) -> Decimal:
+    return abs(a - b) / b if b else Decimal(1)
+
+
+# --- Buste paga ↔ CU ---------------------------------------------------------------------------
+
+def _buste_vs_cu(r: Report, buste: list[Documento], certificazioni: list[Documento], gruppo: str) -> None:
+    for cu in certificazioni:
+        dc = cu.report.dati
+        anno, sostituto = dc.get("periodo_imposta"), dc.get("sostituto_imposta")
+        if not anno:
+            continue
+        nome = f"Buste paga ↔ CU {anno}"
+        # solo le buste dello stesso datore di lavoro (se la P.IVA è nota)
+        stesse = [b for b in buste if not sostituto or not b.report.dati.get("partita_iva_azienda")
+                  or b.report.dati["partita_iva_azienda"] == sostituto]
+        altre = [b for b in buste if b not in stesse and b.anno_mese and b.anno_mese[0] == anno]
+        if altre:
+            r.aggiungi(f"Datore di lavoro {anno}", Esito.ATTENZIONE,
+                       f"Buste paga di un'azienda diversa dal sostituto della CU ({sostituto}): "
+                       + ", ".join(b.nome for b in altre), gruppo=gruppo)
+        if dc.get("data_assunzione"):
+            diverse = [b for b in stesse if b.report.dati.get("data_assunzione")
+                       and b.report.dati["data_assunzione"] != dc["data_assunzione"]]
+            if diverse:
+                r.aggiungi(f"Data assunzione ↔ CU {anno}", Esito.ERRORE,
+                           f"La CU indica inizio rapporto {dc['data_assunzione']:%d/%m/%Y}, diverso da: "
+                           + ", ".join(f"{b.nome} ({b.report.dati['data_assunzione']:%d/%m/%Y})" for b in diverse),
+                           gruppo=gruppo)
+            elif any(b.report.dati.get("data_assunzione") for b in stesse):
+                r.aggiungi(f"Data assunzione ↔ CU {anno}", Esito.OK,
+                           f"Uguale su CU e buste paga: {dc['data_assunzione']:%d/%m/%Y}", gruppo=gruppo)
+        annuo = _annuo_da_buste(stesse, anno)
+        reddito_cu = dc.get("reddito_totale")
+        if annuo is None or reddito_cu is None:
+            continue
+        diff = abs(annuo.reddito - reddito_cu)
+        dettaglio = (f"CU {formatta_euro(reddito_cu)}, buste paga {formatta_euro(annuo.reddito)} "
+                     f"({annuo.metodo})")
+        if annuo.esatto:
+            if diff <= TOLLERANZA_PROGRESSIVI:
+                esito = Esito.OK
+            elif _scostamento(annuo.reddito, reddito_cu) <= Decimal("0.02"):
+                esito, dettaglio = Esito.ATTENZIONE, dettaglio + " — piccola differenza (conguagli?)"
+            else:
+                esito, dettaglio = Esito.ERRORE, dettaglio + f" — differenza {formatta_euro(diff)}"
+        else:
+            sc = _scostamento(annuo.reddito, reddito_cu)
+            esito = Esito.OK if sc <= SCOSTAMENTO_REDDITI else Esito.ATTENZIONE
+            dettaglio += f"; scostamento {sc * 100:.0f}%"
+        r.aggiungi(nome, esito, dettaglio, gruppo=gruppo)
+
+        rit = dc.get("ritenute_irpef")
+        if annuo.esatto and annuo.irpef is not None and rit is not None:
+            diff = abs(annuo.irpef - rit)
+            esito = Esito.OK if diff <= TOLLERANZA_PROGRESSIVI else (
+                Esito.ATTENZIONE if _scostamento(annuo.irpef, rit) <= Decimal("0.05") else Esito.ERRORE)
+            r.aggiungi(f"IRPEF buste paga ↔ CU {anno}", esito,
+                       f"Ritenute CU {formatta_euro(rit)}, progressivo IRPEF di dicembre {formatta_euro(annuo.irpef)}",
+                       gruppo=gruppo)
+
+
+# --- CU ↔ Modello Redditi ------------------------------------------------------------------------
+
+def _cu_vs_redditi(r: Report, certificazioni: list[Documento], redditi: list[Documento], gruppo: str) -> None:
+    for red in redditi:
+        anno = red.report.dati.get("periodo_imposta")
+        dichiarato = red.report.dati.get("reddito_dipendente")
+        cu_anno = [c for c in certificazioni if c.report.dati.get("periodo_imposta") == anno
+                   and c.report.dati.get("reddito_totale") is not None]
+        if not anno or not cu_anno:
+            continue
+        certificato = sum((c.report.dati["reddito_totale"] for c in cu_anno), Decimal(0))
+        nome = f"CU ↔ Redditi {anno}"
+        if dichiarato is None:
+            r.aggiungi(nome, Esito.ATTENZIONE,
+                       f"CU per {formatta_euro(certificato)} ma nessun reddito da lavoro dipendente "
+                       f"nel Modello Redditi ({red.nome})", gruppo=gruppo)
+            continue
+        dettaglio = (f"Dichiarato {formatta_euro(dichiarato)}, certificato da {len(cu_anno)} CU "
+                     f"{formatta_euro(certificato)}")
+        if abs(dichiarato - certificato) <= 1:
+            r.aggiungi(nome, Esito.OK, dettaglio, gruppo=gruppo)
+        elif dichiarato > certificato:
+            r.aggiungi(nome, Esito.ATTENZIONE,
+                       dettaglio + " — dichiarato più del certificato: manca una CU (altro datore) "
+                       "o il reddito è stato gonfiato", gruppo=gruppo)
+        else:
+            r.aggiungi(nome, Esito.ATTENZIONE,
+                       dettaglio + " — dichiarato meno del certificato", gruppo=gruppo)
+
+
 # --- Buste paga ↔ Modello Redditi --------------------------------------------------------
 
 def _buste_vs_redditi(r: Report, buste: list[Documento], redditi: list[Documento], gruppo: str) -> None:
@@ -287,33 +420,19 @@ def _buste_vs_redditi(r: Report, buste: list[Documento], redditi: list[Documento
         reddito_dip = red.report.dati.get("reddito_dipendente")
         if not anno:
             continue
-        dell_anno = [b for b in buste if b.anno_mese and b.anno_mese[0] == anno
-                     and b.report.dati.get("imponibile_fiscale") is not None]
-        if not dell_anno:
+        annuo = _annuo_da_buste(buste, anno)
+        if annuo is None:
             continue
+        nome = f"Buste paga ↔ Redditi {anno}"
         if reddito_dip is None:
-            r.aggiungi(f"Buste paga ↔ Redditi {anno}", Esito.ATTENZIONE,
+            r.aggiungi(nome, Esito.ATTENZIONE,
                        f"Ci sono buste paga del {anno} ma nel Modello Redditi ({red.nome}) "
                        "non risulta reddito da lavoro dipendente", gruppo=gruppo)
             continue
-        # se c'è la busta di dicembre il progressivo è il dato annuo più preciso
-        dicembre = [b for b in dell_anno if b.anno_mese[1] == 12
-                    and b.report.dati.get("progressivo_imponibile_fiscale") is not None]
-        if dicembre:
-            stimato = dicembre[0].report.dati["progressivo_imponibile_fiscale"]
-            metodo = "progressivo di dicembre"
-        else:
-            ordinarie = [b for b in dell_anno if not b.report.dati.get("mensilita_aggiuntiva")]
-            if not ordinarie:
-                continue
-            media = sum(b.report.dati["imponibile_fiscale"] for b in ordinarie) / len(ordinarie)
-            stimato = (media * 13).quantize(Decimal("1"))
-            metodo = f"media di {len(ordinarie)} mesi × 13 mensilità (stima)"
-        diff = abs(stimato - reddito_dip) / reddito_dip if reddito_dip else Decimal(1)
-        dettaglio = (f"Dichiarato {formatta_euro(reddito_dip)}, dalle buste paga {formatta_euro(stimato)} "
-                     f"({metodo}); scostamento {diff * 100:.0f}%")
-        r.aggiungi(f"Buste paga ↔ Redditi {anno}",
-                   Esito.OK if diff <= SCOSTAMENTO_REDDITI else Esito.ATTENZIONE, dettaglio, gruppo=gruppo)
+        sc = _scostamento(annuo.reddito, reddito_dip)
+        dettaglio = (f"Dichiarato {formatta_euro(reddito_dip)}, dalle buste paga {formatta_euro(annuo.reddito)} "
+                     f"({annuo.metodo}); scostamento {sc * 100:.0f}%")
+        r.aggiungi(nome, Esito.OK if sc <= SCOSTAMENTO_REDDITI else Esito.ATTENZIONE, dettaglio, gruppo=gruppo)
 
 
 def _confronta_redditi(r: Report, redditi: list[Documento], gruppo: str) -> None:

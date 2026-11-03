@@ -6,6 +6,7 @@ Programma Python **locale** (nessun dato inviato su internet) che legge e verifi
 |---|---|---|
 | **Busta paga** | P.IVA azienda, CF dipendente, data assunzione, periodo, competenze, trattenute, netto, imponibili, contributi, IRPEF | P.IVA e CF validi (cifra di controllo), netto = competenze − trattenute ± arrotondamenti, aliquota INPS (9,19% / 9,49% / 5,84%), imponibile fiscale = previdenziale − contributi, IRPEF netta ≤ lorda, assunzione coerente con periodo ed età |
 | **Modello Redditi PF (ex Unico)** | Quadri compilati, regime fiscale, reddito, imposte | Regime (forfettario, semplificato, ordinario, professionista, dipendente), reddito **mensile** lordo e netto; per il forfettario: soglia 85.000 €, coefficiente di redditività, aliquota 5%/15% |
+| **Certificazione Unica (CU)** | Datore di lavoro (sostituto d'imposta), dipendente, anno, redditi, giorni lavorati, ritenute IRPEF, addizionali, imponibile e contributi INPS, data inizio rapporto | CF e P.IVA validi, giorni ≤ giorni dell'anno, ritenute IRPEF ≤ IRPEF lorda calcolata con gli scaglioni dell'anno, aliquota INPS, reddito ≈ imponibile INPS − contributi, reddito **mensile** lordo e netto |
 | **Documento d'identità** (CIE, carta, patente, passaporto, tessera sanitaria) | Cognome, nome, nascita, sesso, numero, rilascio, scadenza, CF | CF valido e coerente con cognome/nome/data/sesso, documento scaduto o in scadenza |
 
 Per i **PDF** viene inoltre esaminato il file stesso alla ricerca di **segni di alterazione** (vedi sotto).
@@ -70,6 +71,8 @@ Caricando più documenti (es. 3 buste paga consecutive + carta d'identità + Mod
 | Arrotondamento "precedente" = arrotondamento "attuale" del mese prima | Netto ritoccato |
 | Rapporto netto/lordo e netto simili agli altri mesi | Netto alterato senza ricalcolare il lordo |
 | Mesi doppi (con netto diverso) o mancanti | Due versioni dello stesso cedolino |
+| Buste paga ↔ **CU** dello stesso anno: reddito e IRPEF = progressivi di dicembre, stesso datore e data di assunzione | CU o buste paga alterate |
+| **CU ↔ Modello Redditi**: reddito da lavoro dipendente dichiarato = somma delle CU | Reddito dichiarato gonfiato o CU mancante |
 | Buste paga ↔ reddito da lavoro dipendente del Modello Redditi dello stesso anno | Redditi dichiarati diversi da quelli delle buste |
 | Più anni di Modello Redditi | Cambi di regime, variazioni di reddito molto forti |
 
@@ -124,6 +127,7 @@ verify_document/
   validators.py       codice fiscale, partita IVA, importi, date
   busta_paga.py       analisi cedolino
   modello_redditi.py  analisi Modello Redditi PF
+  cu.py               analisi Certificazione Unica (scaglioni IRPEF per anno in SCAGLIONI_IRPEF)
   anagrafica.py       analisi documenti d'identità
   autenticita.py      esame del file PDF (segni di alterazione)
   confronto.py        confronto tra più documenti dello stesso cliente
@@ -138,7 +142,8 @@ tests/                test automatici
 
 - Ogni software paghe (Zucchetti, TeamSystem, INAZ, ADP…) impagina il cedolino in modo diverso:
   le diciture cercate sono nelle liste `ETICHETTE` dei moduli e vanno tarate su **documenti reali anonimizzati**.
-- La numerazione dei righi del Modello Redditi cambia ogni anno: la ricerca avviene per descrizione.
+- La numerazione dei righi del Modello Redditi e dei punti della CU può cambiare: la ricerca avviene per descrizione.
+- Gli scaglioni IRPEF sono in `cu.py` (`SCAGLIONI_IRPEF`): vanno aggiornati a ogni legge di bilancio.
 - Il programma segnala incongruenze, **non sostituisce** la verifica di un professionista.
 
 > ⚠ Non salvare mai documenti reali dei clienti nel repository (le cartelle `documenti/` e `clienti/` sono già escluse in `.gitignore`).

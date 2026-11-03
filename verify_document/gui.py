@@ -30,6 +30,7 @@ TIPI = {
     "Automatico": "auto",
     "Busta paga": "busta",
     "Modello Redditi PF": "redditi",
+    "Certificazione Unica (CU)": "cu",
     "Documento d'identità": "anagrafica",
 }
 
@@ -50,6 +51,10 @@ RIEPILOGO = {
                 ("reddito_mensile_netto", "Mensile netto imposte"), ("periodo_imposta", "Anno d'imposta"),
                 ("codice_fiscale_contribuente", "Codice fiscale"), ("reddito_annuo", "Reddito annuo"),
                 ("rischio_alterazione", "Rischio alterazione")],
+    "Certificazione": [("reddito_mensile_lordo", "Reddito mensile"),
+                       ("reddito_mensile_netto", "Mensile netto imposte"), ("periodo_imposta", "Anno d'imposta"),
+                       ("reddito_totale", "Reddito annuo"), ("codice_fiscale_dipendente", "CF dipendente"),
+                       ("sostituto_imposta", "Datore di lavoro"), ("rischio_alterazione", "Rischio alterazione")],
     "Carta": [("cognome", "Cognome"), ("nome", "Nome"), ("codice_fiscale", "Codice fiscale"),
               ("data_scadenza", "Scadenza"), ("numero_documento", "N. documento"),
               ("rischio_alterazione", "Rischio alterazione")],

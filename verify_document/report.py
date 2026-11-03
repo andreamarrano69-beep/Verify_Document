@@ -127,10 +127,12 @@ def cerca_importo(
     etichette: list[str],
     solo_decimali: bool = True,
     finestra: int = 160,
+    solo_riga: bool = False,
 ) -> Decimal | None:
     """Cerca la prima etichetta presente e restituisce il primo importo che la segue.
 
     L'importo può trovarsi sulla stessa riga o subito sotto (layout a colonne).
+    Con ``solo_riga`` la riga sotto viene usata solo se contiene soltanto numeri.
     """
     regex_importo = re.compile(
         r"(?<![\w/.,])(" + (IMPORTO_DECIMALI if solo_decimali else IMPORTO_ANCHE_INTERO) + r")"
@@ -141,6 +143,9 @@ def cerca_importo(
             coda = testo[m.end(): m.end() + finestra]
             # non sconfinare oltre la riga successiva
             righe = coda.split("\n")
+            if solo_riga and len(righe) > 1 and re.search(r"[A-Za-zÀ-ú]", righe[1]):
+                # la riga sotto è un'altra voce (es. "6 Numero giorni..."): non prenderne i numeri
+                righe = righe[:1]
             coda = "\n".join(righe[:2])
             for imp in regex_importo.finditer(coda):
                 prima = coda[max(0, imp.start() - 1): imp.start()]

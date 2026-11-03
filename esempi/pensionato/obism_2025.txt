@@ -1,0 +1,11 @@
+INPS - MODELLO OBIS M - CERTIFICATO DI PENSIONE
+Anno: 2025
+Titolare: BIANCHI GIUSEPPE      Codice fiscale: BNCGPP55A10H501F
+Categoria: VO      Numero certificato: 12345678
+
+Importo mensile lordo                               1.850,00
+Ritenute IRPEF                                        330,00
+Addizionale regionale                                  25,00
+Addizionale comunale                                   12,00
+Importo mensile netto                               1.483,00
+Numero rate annue: 13 (tredicesima a dicembre)

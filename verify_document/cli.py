@@ -12,7 +12,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import __version__, anagrafica, busta_paga, cu, modello_redditi
+from . import __version__, anagrafica, busta_paga, cu, modello_redditi, pensione
 from .estrazione import ErroreEstrazione, estrai_testo
 from .report import Report, report_testuale
 
@@ -20,6 +20,7 @@ ANALIZZATORI = {
     "busta": busta_paga,
     "redditi": modello_redditi,
     "cu": cu,
+    "pensione": pensione,
     "anagrafica": anagrafica,
 }
 
@@ -28,7 +29,7 @@ def riconosci_tipo(testo: str) -> str:
     punteggi = {nome: mod.riconosci(testo) for nome, mod in ANALIZZATORI.items()}
     migliore = max(punteggi, key=punteggi.get)
     if punteggi[migliore] == 0:
-        raise ValueError("Tipo di documento non riconosciuto: usa --tipo busta|redditi|cu|anagrafica")
+        raise ValueError("Tipo di documento non riconosciuto: usa --tipo busta|redditi|cu|pensione|anagrafica")
     return migliore
 
 

@@ -43,13 +43,15 @@ class Documento:
             return "redditi"
         if t.startswith("Certificazione Unica"):
             return "cu"
+        if t.startswith(("Cedolino pensione", "Certificato di pensione")):
+            return "pensione"
         return "anagrafica"
 
     @property
     def codice_fiscale(self) -> str | None:
         d = self.report.dati
         return (d.get("codice_fiscale_dipendente") or d.get("codice_fiscale_contribuente")
-                or d.get("codice_fiscale"))
+                or d.get("codice_fiscale_pensionato") or d.get("codice_fiscale"))
 
     @property
     def anno_mese(self) -> tuple[int, int] | None:
@@ -105,10 +107,16 @@ def confronta(documenti: list[tuple[str, Report]]) -> EsitoConfronto:
         buste = [d for d in ds if d.tipo == "busta"]
         redditi = [d for d in ds if d.tipo == "redditi"]
         certificazioni = [d for d in ds if d.tipo == "cu"]
+        pensioni = [d for d in ds if d.tipo == "pensione"]
         tipi = sorted({d.report.tipo_documento for d in ds})
         r.aggiungi("Documenti", Esito.INFO, f"{len(ds)}: {', '.join(tipi)}", gruppo=gruppo)
         if buste:
             esito.tabelle[cf] = _confronta_buste(r, buste, gruppo)
+        if pensioni:
+            righe = _confronta_pensioni(r, pensioni, gruppo)
+            esito.tabelle.setdefault(cf, []).extend(righe)
+        if pensioni and certificazioni:
+            _pensioni_vs_cu(r, pensioni, certificazioni, gruppo)
         if buste and certificazioni:
             _buste_vs_cu(r, buste, certificazioni, gruppo)
         if certificazioni and redditi:
@@ -353,7 +361,7 @@ def _buste_vs_cu(r: Report, buste: list[Documento], certificazioni: list[Documen
                 r.aggiungi(f"Data assunzione ↔ CU {anno}", Esito.OK,
                            f"Uguale su CU e buste paga: {dc['data_assunzione']:%d/%m/%Y}", gruppo=gruppo)
         annuo = _annuo_da_buste(stesse, anno)
-        reddito_cu = dc.get("reddito_totale")
+        reddito_cu = dc.get("reddito_lavoro_dipendente")  # le buste paga non comprendono la pensione
         if annuo is None or reddito_cu is None:
             continue
         diff = abs(annuo.reddito - reddito_cu)
@@ -387,7 +395,8 @@ def _buste_vs_cu(r: Report, buste: list[Documento], certificazioni: list[Documen
 def _cu_vs_redditi(r: Report, certificazioni: list[Documento], redditi: list[Documento], gruppo: str) -> None:
     for red in redditi:
         anno = red.report.dati.get("periodo_imposta")
-        dichiarato = red.report.dati.get("reddito_dipendente")
+        dip, pens = red.report.dati.get("reddito_dipendente"), red.report.dati.get("reddito_pensione")
+        dichiarato = None if dip is None and pens is None else (dip or 0) + (pens or 0)
         cu_anno = [c for c in certificazioni if c.report.dati.get("periodo_imposta") == anno
                    and c.report.dati.get("reddito_totale") is not None]
         if not anno or not cu_anno:
@@ -396,7 +405,7 @@ def _cu_vs_redditi(r: Report, certificazioni: list[Documento], redditi: list[Doc
         nome = f"CU ↔ Redditi {anno}"
         if dichiarato is None:
             r.aggiungi(nome, Esito.ATTENZIONE,
-                       f"CU per {formatta_euro(certificato)} ma nessun reddito da lavoro dipendente "
+                       f"CU per {formatta_euro(certificato)} ma nessun reddito da lavoro dipendente o pensione "
                        f"nel Modello Redditi ({red.nome})", gruppo=gruppo)
             continue
         dettaglio = (f"Dichiarato {formatta_euro(dichiarato)}, certificato da {len(cu_anno)} CU "
@@ -410,6 +419,111 @@ def _cu_vs_redditi(r: Report, certificazioni: list[Documento], redditi: list[Doc
         else:
             r.aggiungi(nome, Esito.ATTENZIONE,
                        dettaglio + " — dichiarato meno del certificato", gruppo=gruppo)
+
+
+# --- Pensioni --------------------------------------------------------------------------------
+
+def _anno_pensione(doc: Documento) -> int | None:
+    return doc.anno_mese[0] if doc.anno_mese else doc.report.dati.get("anno")
+
+
+def _confronta_pensioni(r: Report, pensioni: list[Documento], gruppo: str) -> list[dict]:
+    """Stessa pensione (numero/categoria), importo lordo costante nell'anno, netto stabile."""
+    per_numero: dict[str, list[Documento]] = {}
+    for p in pensioni:
+        chiave = p.report.dati.get("numero_pensione") or p.report.dati.get("categoria") or "?"
+        per_numero.setdefault(chiave, []).append(p)
+    if len(per_numero) > 1:
+        elenco = "; ".join(f"n. {k} ({ps[0].report.dati.get('categoria') or '?'}): "
+                           f"{', '.join(p.nome for p in ps)}" for k, ps in per_numero.items())
+        r.aggiungi("Pensioni", Esito.INFO, f"{len(per_numero)} pensioni diverse — {elenco}", gruppo=gruppo)
+
+    for numero, ps in per_numero.items():
+        nome = "Pensione" if len(per_numero) == 1 else f"Pensione n. {numero}"
+        categorie = {p.report.dati.get("categoria") for p in ps} - {None}
+        if len(categorie) > 1:
+            r.aggiungi(f"{nome}: categoria", Esito.ERRORE,
+                       f"Stesso numero di pensione con categorie diverse: {', '.join(sorted(categorie))}", gruppo=gruppo)
+        ordinari = [p for p in ps if not p.report.dati.get("tredicesima") and p.report.dati.get("importo_lordo")]
+        per_anno: dict[int, dict[Decimal, list[str]]] = {}
+        for p in ordinari:
+            anno = _anno_pensione(p)
+            if anno:
+                per_anno.setdefault(anno, {}).setdefault(p.report.dati["importo_lordo"], []).append(p.nome)
+        for anno, importi in sorted(per_anno.items()):
+            n = sum(len(v) for v in importi.values())
+            if n < 2:
+                continue
+            if len(importi) == 1:
+                r.aggiungi(f"{nome}: importo lordo {anno}", Esito.OK,
+                           f"Uguale su {n} documenti: {formatta_euro(next(iter(importi)))}", gruppo=gruppo)
+            else:
+                dettaglio = "; ".join(f"{formatta_euro(v)} ({', '.join(f)})" for v, f in importi.items())
+                r.aggiungi(f"{nome}: importo lordo {anno}", Esito.ATTENZIONE,
+                           f"Importi lordi diversi nello stesso anno: {dettaglio} — nell'anno la rata è costante "
+                           "(salvo ricostituzioni/arretrati): verificare", gruppo=gruppo)
+        netti = [p.report.dati["importo_netto"] for p in ordinari
+                 if p.report.dati.get("importo_netto") and p.report.dati.get("periodo")]
+        if len(netti) >= 2:
+            mediana = Decimal(median(netti))
+            anomali = [p for p in ordinari if p.report.dati.get("importo_netto") and p.report.dati.get("periodo")
+                       and abs(p.report.dati["importo_netto"] - mediana) > mediana * Decimal("0.10")]
+            if anomali:
+                r.aggiungi(f"{nome}: importo netto", Esito.ATTENZIONE,
+                           "Netto molto diverso dagli altri mesi: "
+                           + ", ".join(f"{p.report.dati['periodo']} {formatta_euro(p.report.dati['importo_netto'])}"
+                                       for p in anomali)
+                           + f" (mediana {formatta_euro(mediana)}): conguagli, nuove trattenute o alterazione?",
+                           gruppo=gruppo)
+            else:
+                r.aggiungi(f"{nome}: importo netto", Esito.OK,
+                           f"Netto stabile su {len(netti)} cedolini (circa {formatta_euro(mediana)})", gruppo=gruppo)
+
+    righe = []
+    for p in sorted(pensioni, key=lambda p: (p.anno_mese or (_anno_pensione(p) or 0, 0))):
+        d = p.report.dati
+        lordo, netto = d.get("importo_lordo"), d.get("importo_netto")
+        periodo = d.get("periodo") or f"Anno {d.get('anno') or '?'}"
+        righe.append({
+            "file": p.nome,
+            "periodo": f"Pensione {periodo}" + (" (13ª)" if d.get("tredicesima") else ""),
+            "lordo": lordo,
+            "netto": netto,
+            "netto_su_lordo": (netto / lordo * 100).quantize(Decimal("0.1")) if lordo and netto else None,
+            "imponibile_fiscale": None,
+            "progressivo_imponibile_fiscale": None,
+            "esito": p.report.esito_globale.value,
+        })
+    return righe
+
+
+def _pensioni_vs_cu(r: Report, pensioni: list[Documento], certificazioni: list[Documento], gruppo: str) -> None:
+    """Reddito di pensione della CU ≈ somma delle rate lorde mensili × 13."""
+    from .pensione import MENSILITA
+
+    for cu in certificazioni:
+        anno = cu.report.dati.get("periodo_imposta")
+        certificato = cu.report.dati.get("reddito_pensione")
+        if not anno or certificato is None:
+            continue
+        rate: dict[str, Decimal] = {}
+        for p in pensioni:
+            d = p.report.dati
+            if _anno_pensione(p) == anno and d.get("importo_lordo") and not d.get("tredicesima"):
+                rate.setdefault(d.get("numero_pensione") or d.get("categoria") or p.nome, d["importo_lordo"])
+        if not rate:
+            continue
+        stimato = sum(rate.values(), Decimal(0)) * MENSILITA
+        sc = _scostamento(stimato, certificato)
+        dettaglio = (f"CU {formatta_euro(certificato)}, rate di pensione {formatta_euro(sum(rate.values()))} × "
+                     f"{MENSILITA} = {formatta_euro(stimato)} (scostamento {sc * 100:.0f}%)")
+        if sc <= Decimal("0.02"):
+            esito = Esito.OK
+        elif sc <= Decimal("0.10"):
+            esito, dettaglio = Esito.ATTENZIONE, dettaglio + " — arretrati, conguagli o variazioni in corso d'anno?"
+        else:
+            esito, dettaglio = Esito.ERRORE, dettaglio + " — importi non compatibili"
+        r.aggiungi(f"Pensione ↔ CU {anno}", esito, dettaglio, gruppo=gruppo)
 
 
 # --- Buste paga ↔ Modello Redditi --------------------------------------------------------

@@ -1,0 +1,17 @@
+INPS
+CERTIFICAZIONE UNICA 2026 - CERTIFICAZIONE LAVORO DIPENDENTE, ASSIMILATI ED ASSISTENZA FISCALE
+Periodo d'imposta 2025
+
+DATI RELATIVI AL SOSTITUTO D'IMPOSTA
+Codice fiscale 80078750587   Denominazione ISTITUTO NAZIONALE DELLA PREVIDENZA SOCIALE
+
+DATI RELATIVI AL DIPENDENTE, PENSIONATO O ALTRO PERCETTORE DELLE SOMME
+Codice fiscale BNCGPP55A10H501F   Cognome BIANCHI   Nome GIUSEPPE
+
+DATI FISCALI
+3  Redditi di pensione                                                  24.050,00
+7  Numero giorni di pensione                                            365
+21 Ritenute IRPEF                                                       4.290,00
+22 Addizionale regionale all'IRPEF                                        300,00
+26 Saldo addizionale comunale                                             100,00
+29 Acconto addizionale comunale                                            44,00

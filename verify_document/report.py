@@ -109,8 +109,46 @@ def etichetta_campo(chiave: str) -> str:
     return testo + (" %" if chiave.endswith("_%") else "")
 
 
+@dataclass
+class Sintesi:
+    """Le informazioni principali di un documento di reddito: che tipo di reddito è e quanto rende al mese."""
+    etichetta: str            # "Regime fiscale", "Tipo di pensione", ...
+    categoria: str | None     # "Forfettario", "Vecchiaia", "Lavoro dipendente", ...
+    mensile_lordo: Decimal | None
+    mensile_netto: Decimal | None
+    nota: str
+
+
+def sintesi(r: Report) -> Sintesi | None:
+    d = r.dati
+    t = r.tipo_documento
+    if t.startswith("Modello Redditi"):
+        return Sintesi("Regime fiscale", d.get("regime_fiscale"), d.get("reddito_mensile_lordo"),
+                       d.get("reddito_mensile_netto"), "reddito annuo diviso 12 mesi; netto = dopo le imposte")
+    if t.startswith("Certificazione Unica"):
+        return Sintesi("Tipo di reddito", d.get("tipo_reddito"), d.get("reddito_mensile_lordo"),
+                       d.get("reddito_mensile_netto"), "media sui mesi del rapporto; netto = dopo ritenute e addizionali")
+    if t.startswith(("Cedolino pensione", "Certificato di pensione")):
+        return Sintesi("Tipo di pensione", d.get("tipo_pensione"), d.get("reddito_mensile_lordo"),
+                       d.get("reddito_mensile_netto"), "rata mensile, pagata per 13 mensilità")
+    if t == "Busta paga":
+        return Sintesi("Tipo di reddito", "Lavoro dipendente", d.get("totale_competenze"), d.get("netto"),
+                       f"busta paga di {d.get('periodo') or 'periodo non indicato'}")
+    return None
+
+
 def report_testuale(nome_file: str, r: Report) -> str:
-    righe = ["=" * 72, f"{nome_file}  →  {r.tipo_documento}", "=" * 72, "DATI ESTRATTI"]
+    righe = ["=" * 72, f"{nome_file}  →  {r.tipo_documento}", "=" * 72]
+    s = sintesi(r)
+    if s:
+        from .validators import formatta_euro
+
+        righe += ["SINTESI",
+                  f"  {s.etichetta + ':':<24} {s.categoria or 'non determinato'}",
+                  f"  {'Importo mensile lordo:':<24} {formatta_euro(s.mensile_lordo)}",
+                  f"  {'Importo mensile netto:':<24} {formatta_euro(s.mensile_netto)}",
+                  f"  ({s.nota})", ""]
+    righe.append("DATI ESTRATTI")
     for k, v in r.dati.items():
         if v is not None:
             righe.append(f"  {etichetta_campo(k):<34} {formatta_valore(k, v)}")

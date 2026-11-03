@@ -55,6 +55,7 @@ ETICHETTE = {
     "reddito_pensione": [r"redditi\s+di\s+pensione"],
     "giorni_lavoro": [r"(?:numero\s+(?:di\s+)?)?giorni\s+(?:di\s+)?lavoro\s+dipendente", r"giorni\s+lavorati"],
     "giorni_pensione": [r"(?:numero\s+(?:di\s+)?)?giorni\s+(?:di\s+)?pensione"],
+    # NB: anche "redditi di pensione" (punto 3) è letto da reddito_pensione
     "ritenute_irpef": [r"ritenute\s+irpef", r"ritenute\s+d['’]acconto\s+irpef"],
     "addizionale_regionale": [r"addizionale\s+regionale(?:\s+all['’]\s*irpef)?(?!\s+sospes)"],
     "addizionale_comunale_saldo": [r"saldo\s+addizionale\s+comunale", r"addizionale\s+comunale[^\n]{0,30}saldo"],
@@ -169,6 +170,14 @@ def analizza(testo: str) -> Report:
         if d[k] is not None:
             d[k] = int(d[k])
 
+    lavoro = [d[k] for k in ("reddito_indeterminato", "reddito_determinato") if d[k]]
+    d["reddito_lavoro_dipendente"] = sum(lavoro, Decimal(0)) if lavoro else None
+    if lavoro and d["reddito_pensione"]:
+        d["tipo_reddito"] = "Lavoro dipendente e pensione"
+    elif d["reddito_pensione"]:
+        d["tipo_reddito"] = "Pensione"
+    elif lavoro:
+        d["tipo_reddito"] = "Lavoro dipendente"
     redditi = [d[k] for k in ("reddito_indeterminato", "reddito_determinato", "reddito_pensione") if d[k]]
     reddito = sum(redditi, Decimal(0)) if redditi else None
     d["reddito_totale"] = reddito
@@ -179,14 +188,18 @@ def analizza(testo: str) -> Report:
     # --- Giorni ----------------------------------------------------------------------
     giorni_anno = 366 if anno and (anno % 4 == 0 and (anno % 100 != 0 or anno % 400 == 0)) else 365
     giorni = d["giorni_lavoro"] or d["giorni_pensione"]
+    nome_giorni = "Giorni lavorati" if d["giorni_lavoro"] else "Giorni di pensione"
     if giorni is None:
-        r.aggiungi("Giorni lavorati", Esito.ATTENZIONE, "Numero di giorni non trovato: uso l'anno intero")
+        r.aggiungi(nome_giorni, Esito.ATTENZIONE, "Numero di giorni non trovato: uso l'anno intero")
         giorni = giorni_anno
     elif giorni > giorni_anno or giorni <= 0:
-        r.aggiungi("Giorni lavorati", Esito.ERRORE, f"{giorni} giorni: impossibile (max {giorni_anno})")
+        r.aggiungi(nome_giorni, Esito.ERRORE, f"{giorni} giorni: impossibile (max {giorni_anno})")
         giorni = min(max(giorni, 1), giorni_anno)
     else:
-        r.aggiungi("Giorni lavorati", Esito.OK, f"{giorni} giorni su {giorni_anno}")
+        r.aggiungi(nome_giorni, Esito.OK, f"{giorni} giorni su {giorni_anno}")
+
+    if d["reddito_pensione"] and not lavoro:
+        r.aggiungi("Tipo di reddito", Esito.INFO, "CU di un pensionato (redditi di pensione)")
 
     if d["data_assunzione"] and anno:
         if d["data_assunzione"] > date(anno, 12, 31):

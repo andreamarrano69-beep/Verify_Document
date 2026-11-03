@@ -7,6 +7,7 @@ Programma Python **locale** (nessun dato inviato su internet) che legge e verifi
 | **Busta paga** | P.IVA azienda, CF dipendente, data assunzione, periodo, competenze, trattenute, netto, imponibili, contributi, IRPEF | P.IVA e CF validi (cifra di controllo), netto = competenze − trattenute ± arrotondamenti, aliquota INPS (9,19% / 9,49% / 5,84%), imponibile fiscale = previdenziale − contributi, IRPEF netta ≤ lorda, assunzione coerente con periodo ed età |
 | **Modello Redditi PF (ex Unico)** | Quadri compilati, regime fiscale, redditi dei quadri, imponibile, imposte, ritenute, acconti, cedolare secca, addizionali | Regime (forfettario, semplificato, ordinario, professionista, dipendente), reddito **mensile** lordo e netto; **catena del quadro RN** (complessivo = somma dei quadri, imponibile = complessivo − deduzioni, imposta lorda = IRPEF a scaglioni dell'anno, netta = lorda − detrazioni, saldo = netta − ritenute − acconti); quadro RE (compensi − spese) e RG (ricavi − costi); cedolare 10/21/26%; addizionali entro i limiti; forfettario: soglia 85.000 €, coefficiente di redditività, aliquota 5%/15% |
 | **Certificazione Unica (CU)** | Datore di lavoro (sostituto d'imposta), dipendente, anno, redditi, giorni lavorati, ritenute IRPEF, addizionali, imponibile e contributi INPS, data inizio rapporto | CF e P.IVA validi, giorni ≤ giorni dell'anno, ritenute IRPEF ≤ IRPEF lorda calcolata con gli scaglioni dell'anno, aliquota INPS, reddito ≈ imponibile INPS − contributi, reddito **mensile** lordo e netto |
+| **Pensione** (cedolino INPS o di altre casse, certificato ObisM) | Pensionato, ente, categoria (VO, IO, SO, AS…), numero pensione, rata, lordo, IRPEF, addizionali, **cessione del quinto, prestiti, pignoramenti**, netto | CF valido ed età coerente con la categoria, netto = lordo − trattenute, IRPEF del mese entro il massimo possibile, prestazioni assistenziali (assegno sociale, invalidità civile) segnalate, importo mensile e annuo (13 mensilità) |
 | **Documento d'identità** (CIE, carta, patente, passaporto, tessera sanitaria) | Cognome, nome, nascita, sesso, numero, rilascio, scadenza, CF | CF valido e coerente con cognome/nome/data/sesso, documento scaduto o in scadenza |
 
 Per i **PDF** viene inoltre esaminato il file stesso alla ricerca di **segni di alterazione** (vedi sotto).
@@ -33,6 +34,21 @@ pip install -r requirements.txt
 ```
 
 OCR (solo per scansioni/foto): installare [Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) con la lingua italiana, poi `pip install pytesseract Pillow`.
+
+## Sintesi: regime e importo mensile in evidenza
+
+Per ogni documento di reddito il programma mostra in alto, a caratteri grandi:
+
+| Documento | Cosa evidenzia |
+|---|---|
+| Modello Redditi PF | **Regime fiscale** (forfettario, semplificato, ordinario, professionista, dipendente, **pensionato**…) e **reddito mensile lordo e netto** |
+| CU | Tipo di reddito (lavoro dipendente / pensione) e reddito mensile lordo e netto |
+| Cedolino pensione / ObisM | Tipo di pensione e rata mensile lorda e netta |
+| Busta paga | Lordo e netto del mese |
+
+Il netto mensile compare anche nell'elenco dei documenti, nella stampa da riga di comando e nel report esportato.
+
+![Pensione](docs/pensione.png)
 
 ## Controllo autenticità dei PDF
 
@@ -72,7 +88,9 @@ Caricando più documenti (es. 3 buste paga consecutive + carta d'identità + Mod
 | Rapporto netto/lordo e netto simili agli altri mesi | Netto alterato senza ricalcolare il lordo |
 | Mesi doppi (con netto diverso) o mancanti | Due versioni dello stesso cedolino |
 | Buste paga ↔ **CU** dello stesso anno: reddito e IRPEF = progressivi di dicembre, stesso datore e data di assunzione | CU o buste paga alterate |
-| **CU ↔ Modello Redditi**: reddito da lavoro dipendente dichiarato = somma delle CU | Reddito dichiarato gonfiato o CU mancante |
+| **CU ↔ Modello Redditi**: reddito da lavoro dipendente e pensione dichiarato = somma delle CU | Reddito dichiarato gonfiato o CU mancante |
+| **Pensione**: stessa categoria per lo stesso numero di pensione, rata lorda costante nell'anno, netto stabile | Cedolino alterato |
+| **Pensione ↔ CU**: reddito di pensione della CU = rata lorda × 13 | CU o cedolini non compatibili |
 | Buste paga ↔ reddito da lavoro dipendente del Modello Redditi dello stesso anno | Redditi dichiarati diversi da quelli delle buste |
 | Più anni di Modello Redditi | Cambi di regime, variazioni di reddito molto forti |
 
@@ -82,6 +100,7 @@ Prova con i documenti di esempio:
 
 ```bash
 python -m verify_document esempi/confronto/*.txt --confronta
+python -m verify_document esempi/pensionato/*.txt --confronta
 ```
 
 ## Interfaccia grafica
@@ -129,6 +148,7 @@ verify_document/
   validators.py       codice fiscale, partita IVA, importi, date
   busta_paga.py       analisi cedolino
   modello_redditi.py  analisi Modello Redditi PF
+  pensione.py         analisi cedolino pensione e certificato ObisM
   cu.py               analisi Certificazione Unica (scaglioni IRPEF per anno in SCAGLIONI_IRPEF)
   anagrafica.py       analisi documenti d'identità
   autenticita.py      esame del file PDF (segni di alterazione)
@@ -136,7 +156,8 @@ verify_document/
   report.py           esiti dei controlli
   cli.py              riga di comando
   gui.py              interfaccia grafica (Tkinter)
-esempi/               documenti FITTIZI di prova (esempi/confronto: 3 buste + carta d'identità)
+esempi/               documenti FITTIZI di prova (esempi/confronto: 3 buste + carta d'identità;
+                      esempi/pensionato: cedolini, ObisM, CU INPS e Modello Redditi di un pensionato)
 tests/                test automatici
 ```
 

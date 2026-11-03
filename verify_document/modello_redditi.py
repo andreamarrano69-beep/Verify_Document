@@ -50,6 +50,7 @@ ETICHETTE = {
     "imposta_a_credito": [r"imposta\s+a\s+credito"],
     # quadri dei redditi
     "reddito_dipendente": [r"redditi?\s+di\s+lavoro\s+dipendente", r"lavoro\s+dipendente\s+e\s+assimilati"],
+    "reddito_pensione": [r"redditi?\s+(?:di|da)\s+pensione"],
     "reddito_fabbricati": [r"reddito\s+(?:dei\s+)?fabbricati(?!\s+(?:a\s+)?cedolare)"],
     "reddito_impresa": [r"reddito\s+d['’]\s*impresa", r"reddito\s+di\s+impresa"],
     "reddito_lavoro_autonomo": [r"reddito\s+(?:netto\s+)?(?:di|da)\s+lavoro\s+autonomo"],
@@ -122,6 +123,22 @@ def _determina_regime(testo: str, quadri: list[str]) -> str:
     return "Non determinato"
 
 
+def _precisa_regime(regime: str, d: dict) -> str:
+    """Con gli importi del quadro RC distingue pensionato, dipendente o entrambi."""
+    pensione, dipendente = d.get("reddito_pensione"), d.get("reddito_dipendente")
+    if regime.startswith("Lavoratore dipendente / pensionato") or regime == "Non determinato":
+        if pensione and dipendente:
+            return "Lavoratore dipendente e pensionato (nessuna partita IVA)"
+        if pensione:
+            return "Pensionato (nessuna partita IVA)"
+        if dipendente:
+            return "Lavoratore dipendente (nessuna partita IVA)"
+        return regime
+    if pensione:
+        return f"{regime} + redditi da pensione"
+    return regime
+
+
 def analizza(testo: str) -> Report:
     r = Report("Modello Redditi PF (ex Unico)")
     d = r.dati
@@ -146,12 +163,14 @@ def analizza(testo: str) -> Report:
     quadri = _quadri_presenti(testo)
     d["quadri_compilati"] = quadri
     regime = _determina_regime(testo, quadri)
-    d["regime_fiscale"] = regime
-    r.aggiungi("Regime fiscale", Esito.INFO if regime != "Non determinato" else Esito.ATTENZIONE,
-               f"{regime} — quadri rilevati: {', '.join(quadri) or 'nessuno'}")
 
     for chiave, etichette in ETICHETTE.items():
         d[chiave] = cerca_importo(testo, etichette, solo_decimali=False, solo_riga=True)
+
+    regime = _precisa_regime(regime, d)
+    d["regime_fiscale"] = regime
+    r.aggiungi("Regime fiscale", Esito.INFO if regime != "Non determinato" else Esito.ATTENZIONE,
+               f"{regime} — quadri rilevati: {', '.join(quadri) or 'nessuno'}")
     if "RE" not in quadri:
         d["compensi_re"] = d["spese_re"] = None
     if "RG" not in quadri and "RF" not in quadri:
@@ -238,7 +257,7 @@ def _controlli_rn(r: Report) -> None:
         return
 
     # 1. reddito complessivo = somma dei redditi dei quadri
-    componenti = {k: d[k] for k in ("reddito_dipendente", "reddito_lavoro_autonomo", "reddito_impresa",
+    componenti = {k: d[k] for k in ("reddito_dipendente", "reddito_pensione", "reddito_lavoro_autonomo", "reddito_impresa",
                                     "reddito_fabbricati", "reddito_partecipazione", "altri_redditi")
                   if d.get(k) is not None}
     if componenti:

@@ -24,13 +24,15 @@ from tkinter import filedialog, messagebox, ttk
 from . import __version__
 from .cli import analizza_documento
 from .estrazione import ErroreEstrazione
-from .report import SIMBOLI, Esito, Report, etichetta_campo, formatta_valore, report_testuale
+from .report import SIMBOLI, Esito, Report, etichetta_campo, formatta_valore, report_testuale, sintesi
+from .validators import formatta_euro
 
 TIPI = {
     "Automatico": "auto",
     "Busta paga": "busta",
     "Modello Redditi PF": "redditi",
     "Certificazione Unica (CU)": "cu",
+    "Pensione (cedolino / ObisM)": "pensione",
     "Documento d'identità": "anagrafica",
 }
 
@@ -47,20 +49,26 @@ RIEPILOGO = {
               ("codice_fiscale_dipendente", "CF dipendente"), ("partita_iva_azienda", "P.IVA azienda"),
               ("data_assunzione", "Assunzione"), ("totale_competenze", "Lordo"),
               ("rischio_alterazione", "Rischio alterazione")],
-    "Modello": [("regime_fiscale", "Regime fiscale"), ("reddito_mensile_lordo", "Reddito mensile"),
-                ("reddito_mensile_netto", "Mensile netto imposte"), ("periodo_imposta", "Anno d'imposta"),
-                ("codice_fiscale_contribuente", "Codice fiscale"), ("reddito_annuo", "Reddito annuo"),
-                ("rischio_alterazione", "Rischio alterazione")],
-    "Certificazione": [("reddito_mensile_lordo", "Reddito mensile"),
-                       ("reddito_mensile_netto", "Mensile netto imposte"), ("periodo_imposta", "Anno d'imposta"),
-                       ("reddito_totale", "Reddito annuo"), ("codice_fiscale_dipendente", "CF dipendente"),
-                       ("sostituto_imposta", "Datore di lavoro"), ("rischio_alterazione", "Rischio alterazione")],
+    # regime e importo mensile sono nella fascia di sintesi in alto
+    "Modello": [("periodo_imposta", "Anno d'imposta"), ("codice_fiscale_contribuente", "Codice fiscale"),
+                ("reddito_annuo", "Reddito annuo"), ("imposte_annue", "Imposte annue"),
+                ("quadri_compilati", "Quadri compilati"), ("rischio_alterazione", "Rischio alterazione")],
+    "Certificazione": [("periodo_imposta", "Anno d'imposta"), ("reddito_totale", "Reddito annuo"),
+                       ("codice_fiscale_dipendente", "Codice fiscale"), ("sostituto_imposta", "Sostituto d'imposta"),
+                       ("ritenute_irpef", "Ritenute IRPEF"), ("rischio_alterazione", "Rischio alterazione")],
+    "Cedolino": [("periodo", "Rata"), ("ente", "Ente"), ("categoria", "Categoria"),
+                 ("numero_pensione", "N. pensione"), ("codice_fiscale_pensionato", "Codice fiscale"),
+                 ("eta", "Età"), ("reddito_annuo", "Lordo annuo (13 rate)"), ("cessione_quinto", "Cessione quinto"),
+                 ("pignoramento", "Pignoramento"), ("rischio_alterazione", "Rischio alterazione")],
     "Carta": [("cognome", "Cognome"), ("nome", "Nome"), ("codice_fiscale", "Codice fiscale"),
               ("data_scadenza", "Scadenza"), ("numero_documento", "N. documento"),
               ("rischio_alterazione", "Rischio alterazione")],
 }
 for _t in ("Patente", "Passaporto", "Tessera", "Documento"):
     RIEPILOGO[_t] = RIEPILOGO["Carta"]
+RIEPILOGO["Certificato"] = [("anno", "Anno")] + RIEPILOGO["Cedolino"][1:]
+
+COLORE_SINTESI = "#1a5a96"
 
 TIPI_FILE = [
     ("Documenti supportati", "*.pdf *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.txt"),
@@ -152,14 +160,16 @@ class App:
         # Colonna sinistra: elenco documenti
         sx = ttk.Frame(corpo)
         ttk.Label(sx, text="Documenti", style="Titolo.TLabel").pack(anchor="w", pady=(0, 4))
-        self.lista = ttk.Treeview(sx, columns=("esito", "tipo"), show="tree headings",
+        self.lista = ttk.Treeview(sx, columns=("esito", "tipo", "mensile"), show="tree headings",
                                   selectmode="browse")
         self.lista.heading("#0", text="File")
         self.lista.heading("esito", text="Esito")
         self.lista.heading("tipo", text="Tipo")
+        self.lista.heading("mensile", text="Netto mensile")
         self.lista.column("#0", width=190)
         self.lista.column("esito", width=100, anchor="center")
         self.lista.column("tipo", width=120)
+        self.lista.column("mensile", width=105, anchor="e")
         for esito, (fg, bg) in COLORI.items():
             self.lista.tag_configure(esito.value, foreground=fg, background=bg)
         self.lista.tag_configure("attesa", foreground="#666")
@@ -180,6 +190,8 @@ class App:
         self.lbl_esito = tk.Label(intest, text="", font=("Segoe UI", 12, "bold"), padx=12, pady=4)
         self.lbl_esito.pack(side="right")
 
+        # Fascia di sintesi: regime / tipo di reddito e importo mensile, in grande
+        self.banner = tk.Frame(dx, bg=COLORE_SINTESI)
         self.riepilogo = tk.Frame(dx, bg="#f4f6f8", highlightthickness=1,
                                   highlightbackground="#d0d7de")
         self.riepilogo.pack(fill="x", pady=(6, 0))
@@ -263,9 +275,9 @@ class App:
                 continue
             chiave = str(p.resolve())
             if self.lista.exists(chiave):
-                self.lista.item(chiave, values=("in corso…", ""), tags=("attesa",))
+                self.lista.item(chiave, values=("in corso…", "", ""), tags=("attesa",))
             else:
-                self.lista.insert("", "end", iid=chiave, text=p.name, values=("in corso…", ""),
+                self.lista.insert("", "end", iid=chiave, text=p.name, values=("in corso…", "", ""),
                                   tags=("attesa",))
             self._avvia_analisi(p, chiave)
         if not self.lista.selection() and self.lista.get_children():
@@ -300,7 +312,9 @@ class App:
                     esito = ris.esito
                     testo_esito = f"{SIMBOLI[esito]} {esito.value}" if ris.report else "✘ ILLEGGIBILE"
                     tipo = ris.report.tipo_documento if ris.report else "—"
-                    self.lista.item(chiave, values=(testo_esito, tipo), tags=(esito.value,))
+                    sx = sintesi(ris.report) if ris.report else None
+                    mensile = formatta_euro(sx.mensile_netto) if sx and sx.mensile_netto is not None else ""
+                    self.lista.item(chiave, values=(testo_esito, tipo, mensile), tags=(esito.value,))
                 if chiave in self.lista.selection():
                     self.mostra_selezionato()
         except queue.Empty:
@@ -352,7 +366,30 @@ class App:
             self.tab_dati.insert("", "end", values=(etichetta_campo(k), formatta_valore(k, v)),
                                  tags=("vuoto",) if v is None else ())
 
+    def _aggiorna_banner(self, r: Report | None) -> None:
+        for w in self.banner.winfo_children():
+            w.destroy()
+        s = sintesi(r) if r else None
+        if s is None:
+            self.banner.pack_forget()
+            return
+        self.banner.pack(fill="x", pady=(6, 0), before=self.riepilogo)
+        blocchi = [(s.etichetta, s.categoria or "non determinato", 15),
+                   ("Importo mensile lordo", formatta_euro(s.mensile_lordo), 20),
+                   ("Importo mensile netto", formatta_euro(s.mensile_netto), 20)]
+        for i, (titolo, valore, dim) in enumerate(blocchi):
+            cella = tk.Frame(self.banner, bg=COLORE_SINTESI, padx=16, pady=8)
+            cella.grid(row=0, column=i, sticky="nw")
+            tk.Label(cella, text=titolo.upper(), bg=COLORE_SINTESI, fg="#c9dcf2",
+                     font=("Segoe UI", 9, "bold")).pack(anchor="w")
+            tk.Label(cella, text=valore, bg=COLORE_SINTESI, fg="#ffffff", font=("Segoe UI", dim, "bold"),
+                     wraplength=380, justify="left").pack(anchor="w")
+        self.banner.columnconfigure(0, weight=1)
+        tk.Label(self.banner, text=s.nota, bg=COLORE_SINTESI, fg="#c9dcf2",
+                 font=("Segoe UI", 9)).grid(row=1, column=0, columnspan=3, sticky="w", padx=16, pady=(0, 6))
+
     def _aggiorna_riepilogo(self, r: Report | None) -> None:
+        self._aggiorna_banner(r)
         for w in self.riepilogo.winfo_children():
             w.destroy()
         if r is None:
@@ -379,7 +416,7 @@ class App:
     def rianalizza(self) -> None:
         """Rianalizza tutti i documenti (es. dopo aver cambiato il tipo)."""
         for chiave in self.lista.get_children():
-            self.lista.item(chiave, values=("in corso…", ""), tags=("attesa",))
+            self.lista.item(chiave, values=("in corso…", "", ""), tags=("attesa",))
             self.risultati.pop(chiave, None)
             self._avvia_analisi(Path(chiave), chiave)
 

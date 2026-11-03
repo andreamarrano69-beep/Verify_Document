@@ -1,0 +1,13 @@
+INPS - ISTITUTO NAZIONALE DELLA PREVIDENZA SOCIALE
+CEDOLINO DELLA PENSIONE - Rata di MARZO 2025
+Pensionato: BIANCHI GIUSEPPE          Codice fiscale: BNCGPP55A10H501F
+Categoria pensione: VO        Numero pensione: 12345678        Sede: ROMA
+
+DESCRIZIONE                                         IMPORTO
+Importo lordo                                       1.850,00
+Ritenute IRPEF                                        330,00
+Addizionale regionale                                  25,00
+Addizionale comunale                                   12,00
+Cessione del quinto                                   150,00
+Totale trattenute                                     517,00
+Importo netto                                       1.333,00

@@ -1,0 +1,19 @@
+AGENZIA DELLE ENTRATE - REDDITI 2026 PERSONE FISICHE
+Periodo d'imposta 2025
+Codice fiscale BNCGPP55A10H501F
+
+QUADRO RC - Redditi di lavoro dipendente e assimilati
+RC1 Redditi di pensione 24.050
+
+QUADRO RN - Determinazione dell'IRPEF
+RN1 Reddito complessivo 24.050
+RN4 Reddito imponibile 24.050
+RN5 Imposta lorda 5.532
+RN22 Totale detrazioni 1.241
+RN26 Imposta netta 4.291
+RN33 Ritenute totali 4.290
+RN45 Imposta a debito 1
+
+QUADRO RV - Addizionali regionale e comunale all'IRPEF
+RV2 Addizionale regionale all'IRPEF dovuta 300
+RV10 Addizionale comunale all'IRPEF dovuta 144

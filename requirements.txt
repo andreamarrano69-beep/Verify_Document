@@ -2,6 +2,8 @@
 pdfplumber>=0.11
 # Rendering pagine PDF in immagini per l'OCR (nessuna dipendenza esterna)
 pypdfium2>=4.0
+# Creazione del report PDF
+reportlab>=4.0
 # --- Opzionale: OCR per documenti scansionati/foto (carta d'identità, ecc.) ---
 # Richiede anche il programma Tesseract con lingua italiana installato nel sistema.
 # pytesseract>=0.3

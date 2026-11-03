@@ -1,4 +1,3 @@
 # Solo per sviluppo/test: servono a generare i PDF (originali e falsificati) usati nei test
 -r requirements.txt
-reportlab>=4.0
 pypdf>=5.0

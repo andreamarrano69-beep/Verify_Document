@@ -155,6 +155,10 @@ def analizza(testo: str) -> Report:
         r.aggiungi("Codice fiscale dipendente", Esito.OK if info.valido else Esito.ERRORE,
                    f"{cf} {'valido' if info.valido else 'NON valido (carattere di controllo errato)'}")
 
+    m = re.search(r"(?i:cognome)\s*[:\-]?\s*([A-Z][A-Z'À-Ü ]+?)\s+(?i:nome)\s*[:\-]?\s*([A-Z][A-Z'À-Ü]+(?: [A-Z'À-Ü]+)?)\b",
+                  testo[testo.upper().find("DIPENDENTE"):] if "DIPENDENTE" in testo.upper() else testo)
+    d["nominativo"] = f"{m.group(1).strip()} {m.group(2).strip()}" if m else None
+
     inizio = cerca_testo(testo, [r"data\s+(?:di\s+)?inizio(?:\s+del)?\s+rapporto", r"data\s+(?:di\s+)?assunzione",
                                  r"data\s+inizio"], r"(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})")
     d["data_assunzione"] = parse_data(inizio) if inizio else None

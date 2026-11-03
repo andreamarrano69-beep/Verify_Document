@@ -138,25 +138,38 @@ class App:
         st.configure("Esci.TButton", font=("Segoe UI", 10, "bold"), foreground="#b3261e")
 
     def _costruisci(self) -> None:
-        # Barra superiore
-        barra = ttk.Frame(self.root, padding=(10, 8))
+        # Barra superiore, riga 1: azioni principali
+        barra = ttk.Frame(self.root, padding=(10, 8, 10, 2))
         barra.pack(fill="x")
         ttk.Button(barra, text="📂  Apri documenti…", style="Accent.TButton",
                    command=self.apri_file).pack(side="left")
-        ttk.Label(barra, text="   Tipo:").pack(side="left")
-        self.var_tipo = tk.StringVar(value="Automatico")
-        ttk.Combobox(barra, textvariable=self.var_tipo, values=list(TIPI), state="readonly",
-                     width=22).pack(side="left", padx=4)
-        self.var_ocr = tk.BooleanVar(value=True)
-        ttk.Checkbutton(barra, text="Usa OCR per scansioni/foto", variable=self.var_ocr).pack(
-            side="left", padx=10)
+        ttk.Button(barra, text="⇄  Confronta documenti", style="Accent.TButton",
+                   command=self.confronta).pack(side="left", padx=6)
+        ttk.Button(barra, text="📄  Report PDF", style="Accent.TButton",
+                   command=self.esporta_pdf).pack(side="left")
+        menu_esporta = ttk.Menubutton(barra, text="💾  Esporta ▾")
+        menu = tk.Menu(menu_esporta, tearoff=0)
+        menu.add_command(label="Report PDF…", command=self.esporta_pdf)
+        menu.add_command(label="Testo (.txt)…", command=lambda: self.esporta("txt"))
+        menu.add_command(label="Dati (.json)…", command=lambda: self.esporta("json"))
+        menu_esporta["menu"] = menu
+        menu_esporta.pack(side="left", padx=6)
         ttk.Button(barra, text="⏻  Esci", style="Esci.TButton", command=self.esci).pack(side="right")
         ttk.Separator(barra, orient="vertical").pack(side="right", fill="y", padx=8)
-        ttk.Button(barra, text="🗑  Svuota", command=self.svuota).pack(side="right")
-        ttk.Button(barra, text="💾  Esporta report…", command=self.esporta).pack(side="right", padx=6)
-        ttk.Button(barra, text="↻  Rianalizza", command=self.rianalizza).pack(side="right")
-        ttk.Button(barra, text="⇄  Confronta documenti", style="Accent.TButton",
-                   command=self.confronta).pack(side="right", padx=6)
+        ttk.Button(barra, text="⚙  Impostazioni", command=self.apri_impostazioni).pack(side="right")
+
+        # riga 2: opzioni di analisi
+        opzioni = ttk.Frame(self.root, padding=(10, 2, 10, 6))
+        opzioni.pack(fill="x")
+        ttk.Label(opzioni, text="Tipo di documento:").pack(side="left")
+        self.var_tipo = tk.StringVar(value="Automatico")
+        ttk.Combobox(opzioni, textvariable=self.var_tipo, values=list(TIPI), state="readonly",
+                     width=26).pack(side="left", padx=4)
+        self.var_ocr = tk.BooleanVar(value=True)
+        ttk.Checkbutton(opzioni, text="Usa OCR per scansioni/foto", variable=self.var_ocr).pack(
+            side="left", padx=10)
+        ttk.Button(opzioni, text="↻  Rianalizza", command=self.rianalizza).pack(side="left", padx=(10, 0))
+        ttk.Button(opzioni, text="🗑  Svuota", command=self.svuota).pack(side="left", padx=6)
 
         corpo = ttk.PanedWindow(self.root, orient="horizontal")
         corpo.pack(fill="both", expand=True, padx=10, pady=(0, 6))
@@ -480,24 +493,147 @@ class App:
         FinestraConfronto(self.root, esito)
         self.var_stato.set(f"Confronto tra {len(validi)} documenti: {esito.report.esito_globale.value}")
 
-    def esporta(self) -> None:
-        validi = {k: r for k, r in self.risultati.items() if r.report}
+    def _validi(self) -> list[tuple[str, Report]]:
+        return [(r.percorso.name, r.report) for r in self.risultati.values() if r.report]
+
+    def esporta(self, formato: str = "txt") -> None:
+        validi = [r for r in self.risultati.values() if r.report]
         if not validi:
             messagebox.showinfo("Esporta", "Nessun report da esportare.", parent=self.root)
             return
-        dest = filedialog.asksaveasfilename(
-            title="Salva report", defaultextension=".txt", initialfile="report_verifica.txt",
-            filetypes=[("Testo", "*.txt"), ("JSON", "*.json")],
-        )
+        tipi = {"txt": [("Testo", "*.txt")], "json": [("JSON", "*.json")]}[formato]
+        dest = filedialog.asksaveasfilename(title="Salva report", defaultextension=f".{formato}",
+                                            initialfile=f"report_verifica.{formato}", filetypes=tipi)
         if not dest:
             return
-        if dest.lower().endswith(".json"):
-            dati = [{"file": r.percorso.name, **r.report.to_dict()} for r in validi.values()]
+        if formato == "json":
+            dati = [{"file": r.percorso.name, **r.report.to_dict()} for r in validi]
             contenuto = json.dumps(dati, ensure_ascii=False, indent=2)
         else:
-            contenuto = "\n".join(report_testuale(r.percorso.name, r.report) for r in validi.values())
+            contenuto = "\n".join(report_testuale(r.percorso.name, r.report) for r in validi)
         Path(dest).write_text(contenuto, encoding="utf-8")
         self.var_stato.set(f"Report salvato in {dest}")
+
+    def esporta_pdf(self) -> None:
+        from datetime import date
+
+        from . import impostazioni
+        from .confronto import confronta
+
+        if self.in_corso:
+            messagebox.showwarning("Attendere", "Analisi ancora in corso.", parent=self.root)
+            return
+        validi = self._validi()
+        if not validi:
+            messagebox.showinfo("Report PDF", "Apri prima uno o più documenti.", parent=self.root)
+            return
+        imp = impostazioni.carica()
+        if not imp["studio"] and messagebox.askyesno(
+                "Report PDF", "Non hai ancora inserito i dati del tuo studio e il logo.\n"
+                "Vuoi inserirli ora? (compariranno nell'intestazione del report)", parent=self.root):
+            self.apri_impostazioni(attendi=True)
+            imp = impostazioni.carica()
+        cf = next((r.dati.get(k) for _, r in validi for k in ("codice_fiscale", "codice_fiscale_dipendente",
+                   "codice_fiscale_contribuente", "codice_fiscale_pensionato") if r.dati.get(k)), "cliente")
+        dest = filedialog.asksaveasfilename(
+            title="Salva report PDF", defaultextension=".pdf", filetypes=[("PDF", "*.pdf")],
+            initialfile=f"report_{cf}_{date.today():%Y%m%d}.pdf")
+        if not dest:
+            return
+        try:
+            from .report_pdf import genera_report_pdf
+
+            esito_confronto = confronta(validi) if len(validi) >= 2 else None
+            genera_report_pdf(dest, validi, esito_confronto, imp)
+        except ImportError:
+            messagebox.showerror("Report PDF", "Manca la libreria reportlab.\nNel terminale: pip install reportlab",
+                                 parent=self.root)
+            return
+        except Exception as e:
+            messagebox.showerror("Report PDF", f"Impossibile creare il PDF:\n{e}", parent=self.root)
+            return
+        self.var_stato.set(f"Report PDF salvato in {dest}")
+        if messagebox.askyesno("Report PDF", f"Report creato:\n{dest}\n\nVuoi aprirlo?", parent=self.root):
+            apri_con_programma_predefinito(dest)
+
+    def apri_impostazioni(self, attendi: bool = False) -> None:
+        finestra = FinestraImpostazioni(self.root)
+        if attendi:
+            self.root.wait_window(finestra.win)
+
+
+def apri_con_programma_predefinito(percorso: str) -> None:
+    import os
+    import subprocess
+    import sys
+
+    try:
+        if sys.platform.startswith("win"):
+            os.startfile(percorso)  # noqa: S606 - file creato dal programma
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", percorso])
+        else:
+            subprocess.Popen(["xdg-open", percorso])
+    except Exception:
+        pass
+
+
+class FinestraImpostazioni:
+    """Dati dello studio e logo da mostrare nel report PDF."""
+
+    CAMPI = [("studio", "Nome studio / agenzia"), ("indirizzo", "Indirizzo"), ("contatti", "Telefono, email, sito"),
+             ("partita_iva", "Partita IVA"), ("operatore", "Operatore (firma del report)")]
+
+    def __init__(self, parent: tk.Tk):
+        from . import impostazioni
+
+        self.imp = impostazioni
+        dati = impostazioni.carica()
+        self.win = tk.Toplevel(parent)
+        self.win.title("Impostazioni del report")
+        self.win.transient(parent)
+        self.win.resizable(False, False)
+        corpo = ttk.Frame(self.win, padding=16)
+        corpo.pack(fill="both", expand=True)
+        ttk.Label(corpo, text="Dati che compaiono nell'intestazione del report PDF",
+                  style="Titolo.TLabel").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
+        self.var = {}
+        for i, (chiave, etichetta) in enumerate(self.CAMPI, start=1):
+            ttk.Label(corpo, text=etichetta).grid(row=i, column=0, sticky="w", pady=3)
+            self.var[chiave] = tk.StringVar(value=dati.get(chiave, ""))
+            ttk.Entry(corpo, textvariable=self.var[chiave], width=52).grid(row=i, column=1, columnspan=2,
+                                                                           sticky="we", pady=3)
+        riga = len(self.CAMPI) + 1
+        ttk.Label(corpo, text="Logo (PNG o JPG)").grid(row=riga, column=0, sticky="w", pady=3)
+        self.var["logo"] = tk.StringVar(value=dati.get("logo", ""))
+        ttk.Entry(corpo, textvariable=self.var["logo"], width=40).grid(row=riga, column=1, sticky="we", pady=3)
+        ttk.Button(corpo, text="Scegli…", command=self._scegli_logo).grid(row=riga, column=2, padx=(6, 0))
+        ttk.Label(corpo, text="Note in fondo al report").grid(row=riga + 1, column=0, sticky="nw", pady=3)
+        self.note = tk.Text(corpo, width=52, height=4, font=("Segoe UI", 10), wrap="word")
+        self.note.insert("1.0", dati.get("note", ""))
+        self.note.grid(row=riga + 1, column=1, columnspan=2, sticky="we", pady=3)
+        ttk.Label(corpo, text=f"Salvate in: {impostazioni.FILE}", foreground="#666").grid(
+            row=riga + 2, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        pulsanti = ttk.Frame(corpo)
+        pulsanti.grid(row=riga + 3, column=0, columnspan=3, sticky="e", pady=(12, 0))
+        ttk.Button(pulsanti, text="Annulla", command=self.win.destroy).pack(side="right")
+        ttk.Button(pulsanti, text="Salva", style="Accent.TButton", command=self._salva).pack(side="right", padx=6)
+        self.win.grab_set()
+
+    def _scegli_logo(self) -> None:
+        percorso = filedialog.askopenfilename(parent=self.win, title="Scegli il logo",
+                                              filetypes=[("Immagini", "*.png *.jpg *.jpeg"), ("Tutti i file", "*.*")])
+        if percorso:
+            self.var["logo"].set(percorso)
+
+    def _salva(self) -> None:
+        dati = {k: v.get().strip() for k, v in self.var.items()}
+        dati["note"] = self.note.get("1.0", "end").strip()
+        if dati["logo"] and not Path(dati["logo"]).is_file():
+            messagebox.showwarning("Logo", "Il file del logo non esiste.", parent=self.win)
+            return
+        self.imp.salva(dati)
+        self.win.destroy()
 
 
 class FinestraConfronto:

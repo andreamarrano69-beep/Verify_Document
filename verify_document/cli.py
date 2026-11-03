@@ -74,6 +74,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="non esaminare il file PDF in cerca di alterazioni")
     parser.add_argument("--confronta", action="store_true",
                         help="confronta tra loro i documenti (stesso cliente, buste paga consecutive, ...)")
+    parser.add_argument("--pdf", metavar="FILE.pdf",
+                        help="crea il report PDF (con il confronto se i documenti sono più di uno)")
     parser.add_argument("--version", action="version", version=__version__)
     args = parser.parse_args(argv)
 
@@ -108,4 +110,12 @@ def main(argv: list[str] | None = None) -> int:
             print(confronto_testuale(c))
     if args.json:
         print(json.dumps(risultati, ensure_ascii=False, indent=2))
+    if args.pdf and analizzati:
+        from . import impostazioni
+        from .confronto import confronta
+        from .report_pdf import genera_report_pdf
+
+        esito_confronto = confronta(analizzati) if len(analizzati) >= 2 else None
+        genera_report_pdf(args.pdf, analizzati, esito_confronto, impostazioni.carica())
+        print(f"Report PDF salvato in {args.pdf}", file=sys.stderr)
     return codice_uscita

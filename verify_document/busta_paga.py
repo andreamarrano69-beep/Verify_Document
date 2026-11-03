@@ -189,6 +189,9 @@ def analizza(testo: str) -> Report:
                 dettaglio += f" — età all'assunzione {eta} anni: incoerente con il CF"
         r.aggiungi("Data assunzione", esito, dettaglio)
 
+    m = re.search(r"(?i:dipendente|lavoratore|cognome\s+e\s+nome)\s*[:\-]\s*([A-Z][A-Z'À-Ü]+(?: [A-Z'À-Ü]+){1,3})(?=\s{2,}|\s*\n|\s+(?i:codice|c\.f))", testo)
+    d["nominativo"] = m.group(1).strip() if m else None
+
     # --- Importi ------------------------------------------------------------
     for chiave, etichette in ETICHETTE.items():
         d[chiave] = cerca_importo(testo, etichette)

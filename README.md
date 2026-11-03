@@ -121,6 +121,30 @@ python -m verify_document esempi/confronto/*.txt --confronta
 python -m verify_document esempi/pensionato/*.txt --confronta
 ```
 
+## Report PDF
+
+Il pulsante **📄 Report PDF** (o `--pdf report.pdf` da riga di comando) crea un PDF da consegnare
+al cliente o alla finanziaria con:
+
+1. intestazione con **logo e dati dello studio** (da **⚙ Impostazioni**, salvati una volta sola)
+2. cliente (nome e codice fiscale), data, operatore
+3. **esito complessivo** e rischio di alterazione dei file
+4. **sintesi dei redditi**: per ogni documento regime/tipo di reddito e importo mensile lordo e netto
+5. **confronto tra i documenti** e andamento mese per mese (se i documenti sono più di uno)
+6. dettaglio di ogni documento con dati e controlli
+7. nota sui limiti dello strumento, spazio per la firma, numeri di pagina
+
+Esempio completo: [docs/report_esempio.pdf](docs/report_esempio.pdf)
+
+![Report PDF](docs/report_pdf.png)
+
+```bash
+python -m verify_document esempi/pensionato/*.txt --pdf report.pdf
+```
+
+Le impostazioni dello studio sono salvate in `~/.verify_document/impostazioni.json`
+(Windows: `C:\Users\<nome>\.verify_document\impostazioni.json`).
+
 ## Interfaccia grafica
 
 ![Interfaccia grafica](docs/interfaccia.png)
@@ -135,7 +159,8 @@ python -m verify_document.gui
 - in alto il **riepilogo**: netto/CF/P.IVA/assunzione per la busta paga, regime e reddito mensile per il Modello Redditi
 - schede **Controlli** (✔ verde, ⚠ giallo, ✘ rosso; doppio clic per leggere il dettaglio completo),
   **Dati estratti** e **Testo letto** (per capire cosa non è stato trovato)
-- **Esporta report…** in .txt o .json; **Rianalizza** dopo aver cambiato il tipo di documento
+- **📄 Report PDF** e **💾 Esporta ▾** (PDF, .txt, .json); **⚙ Impostazioni** per logo e dati dello studio
+- **Rianalizza** dopo aver cambiato il tipo di documento
 - per trascinare i file nella finestra: `pip install tkinterdnd2`
 - si apre a tutto schermo; **F11** schermo intero senza bordi, **Esc** per tornare indietro
 - **⏻ Esci** (o **Ctrl+Q**, o la X della finestra) chiede conferma se ci sono documenti analizzati
@@ -154,7 +179,7 @@ Codice di uscita: `0` tutto ok, `1` almeno un controllo in ERRORE, `2` file non 
 ## Test
 
 ```bash
-pip install -r requirements-dev.txt     # reportlab e pypdf, per generare i PDF falsificati di prova
+pip install -r requirements-dev.txt     # pypdf, per generare i PDF falsificati di prova
 python -m unittest discover -s tests -v
 ```
 
@@ -168,6 +193,8 @@ verify_document/
   modello_redditi.py  analisi Modello Redditi PF
   pensione.py         analisi cedolino pensione e certificato ObisM
   impegni.py          cessione del quinto, deleghe, pignoramenti, quinto cedibile
+  report_pdf.py       report PDF con logo e dati dello studio
+  impostazioni.py     dati dello studio (impostazioni.json)
   cu.py               analisi Certificazione Unica (scaglioni IRPEF per anno in SCAGLIONI_IRPEF)
   anagrafica.py       analisi documenti d'identità
   autenticita.py      esame del file PDF (segni di alterazione)

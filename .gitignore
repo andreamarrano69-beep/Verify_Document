@@ -11,3 +11,4 @@ clienti/
 *.pdf
 !esempi/*.pdf
 report/
+!docs/*.pdf

@@ -91,6 +91,9 @@ def analizza(testo: str) -> Report:
     d["numero_pensione"] = cerca_testo(
         testo, [r"(?:numero|n\.)\s*(?:della\s+)?(?:pensione|certificato)", r"certificato\s+n\.?"], r"([0-9]{5,12})")
 
+    m = re.search(r"(?i:pensionato|titolare|beneficiario)\s*[:\-]\s*([A-Z][A-Z'À-Ü]+(?: [A-Z'À-Ü]+){1,3})(?=\s{2,}|\s*\n|\s+(?i:codice|c\.f))", testo)
+    d["nominativo"] = m.group(1).strip() if m else None
+
     # --- Pensionato --------------------------------------------------------------------
     codici = list(dict.fromkeys(x.group(0) for x in CF_REGEX.finditer(testo.upper())))
     cf = codici[0] if codici else None

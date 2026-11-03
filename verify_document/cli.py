@@ -14,8 +14,7 @@ from pathlib import Path
 
 from . import __version__, anagrafica, busta_paga, modello_redditi
 from .estrazione import ErroreEstrazione, estrai_testo
-from .report import SIMBOLI, Report
-from .validators import formatta_euro
+from .report import Report, report_testuale
 
 ANALIZZATORI = {
     "busta": busta_paga,
@@ -42,36 +41,8 @@ def analizza_file(percorso: str | Path, tipo: str = "auto", usa_ocr: bool = True
     return analizza_testo(estrai_testo(percorso, usa_ocr=usa_ocr), tipo)
 
 
-def _valore(v) -> str:
-    from datetime import date
-    from decimal import Decimal
-
-    if v is None:
-        return "—"
-    if isinstance(v, Decimal):
-        return formatta_euro(v)
-    if isinstance(v, date):
-        return v.strftime("%d/%m/%Y")
-    if isinstance(v, list):
-        return ", ".join(map(str, v)) or "—"
-    return str(v)
-
-
 def stampa_report(nome_file: str, r: Report) -> None:
-    print("=" * 72)
-    print(f"{nome_file}  →  {r.tipo_documento}")
-    print("=" * 72)
-    print("DATI ESTRATTI")
-    for k, v in r.dati.items():
-        if v is None:
-            continue
-        etichetta = k.replace("_", " ").capitalize()
-        valore = f"{v}%" if k.endswith("_%") else _valore(v)
-        print(f"  {etichetta:<34} {valore}")
-    print("\nCONTROLLI")
-    for c in r.controlli:
-        print(f"  {SIMBOLI[c.esito]} {c.nome:<32} {c.dettaglio}")
-    print(f"\nESITO COMPLESSIVO: {SIMBOLI[r.esito_globale]} {r.esito_globale.value}\n")
+    print(report_testuale(nome_file, r))
 
 
 def main(argv: list[str] | None = None) -> int:

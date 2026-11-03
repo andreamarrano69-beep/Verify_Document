@@ -6,3 +6,5 @@ pypdfium2>=4.0
 # Richiede anche il programma Tesseract con lingua italiana installato nel sistema.
 # pytesseract>=0.3
 # Pillow>=10
+# --- Opzionale: trascinare i file nella finestra dell'interfaccia grafica ---
+# tkinterdnd2>=0.4

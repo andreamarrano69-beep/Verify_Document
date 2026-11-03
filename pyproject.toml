@@ -7,9 +7,13 @@ dependencies = ["pdfplumber>=0.11", "pypdfium2>=4.0"]
 
 [project.optional-dependencies]
 ocr = ["pytesseract>=0.3", "Pillow>=10"]
+dnd = ["tkinterdnd2>=0.4"]
 
 [project.scripts]
 verify-document = "verify_document.cli:main"
+
+[project.gui-scripts]
+verify-document-gui = "verify_document.gui:main"
 
 [build-system]
 requires = ["setuptools>=68"]

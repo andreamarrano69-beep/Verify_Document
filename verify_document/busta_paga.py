@@ -207,7 +207,7 @@ def analizza(testo: str) -> Report:
         if abs(vicina - aliquota) <= Decimal("0.05"):
             r.aggiungi("Contributi INPS", Esito.OK,
                        f"{formatta_euro(contr)} su imponibile {formatta_euro(imp_prev)} "
-                       f"= {aliquota}% ({ALIQUOTE_INPS[vicina]})")
+                       f"= {str(aliquota).replace('.', ',')}% ({ALIQUOTE_INPS[vicina]})")
         else:
             r.aggiungi("Contributi INPS", Esito.ATTENZIONE,
                        f"Aliquota calcolata {aliquota}%: non corrisponde alle aliquote standard "

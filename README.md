@@ -31,7 +31,24 @@ pip install -r requirements.txt
 
 OCR (solo per scansioni/foto): installare [Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) con la lingua italiana, poi `pip install pytesseract Pillow`.
 
-## Uso
+## Interfaccia grafica
+
+![Interfaccia grafica](docs/interfaccia.png)
+
+Doppio clic su **`Avvia Verify Document.bat`** (Windows), oppure dal terminale:
+
+```powershell
+python -m verify_document.gui
+```
+
+- **Apri documenti…**: seleziona uno o più PDF, immagini o .txt (analizzati in parallelo)
+- in alto il **riepilogo**: netto/CF/P.IVA/assunzione per la busta paga, regime e reddito mensile per il Modello Redditi
+- schede **Controlli** (✔ verde, ⚠ giallo, ✘ rosso; doppio clic per leggere il dettaglio completo),
+  **Dati estratti** e **Testo letto** (per capire cosa non è stato trovato)
+- **Esporta report…** in .txt o .json; **Rianalizza** dopo aver cambiato il tipo di documento
+- per trascinare i file nella finestra: `pip install tkinterdnd2`
+
+## Uso da riga di comando
 
 ```bash
 python -m verify_document esempi/busta_paga_esempio.txt
@@ -59,6 +76,7 @@ verify_document/
   anagrafica.py       analisi documenti d'identità
   report.py           esiti dei controlli
   cli.py              riga di comando
+  gui.py              interfaccia grafica (Tkinter)
 esempi/               documenti FITTIZI di prova
 tests/                test automatici
 ```

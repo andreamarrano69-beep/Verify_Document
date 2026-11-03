@@ -175,5 +175,26 @@ class TestRiconoscimento(unittest.TestCase):
             self.assertEqual(r.esito_globale, Esito.OK, r.to_dict())
 
 
+class TestReport(unittest.TestCase):
+    def test_formattazione(self):
+        from verify_document.report import etichetta_campo, formatta_valore, report_testuale
+        self.assertEqual(formatta_valore("netto", Decimal("1632")), "€ 1.632,00")
+        self.assertEqual(formatta_valore("aliquota_%", Decimal("9.19")), "9,19%")
+        self.assertEqual(formatta_valore("data", date(2019, 3, 1)), "01/03/2019")
+        self.assertEqual(etichetta_campo("partita_iva_azienda"), "Partita IVA azienda")
+        r = busta_paga.analizza(leggi("busta_paga_esempio.txt"))
+        self.assertIn("ESITO COMPLESSIVO: ✔ OK", report_testuale("x", r))
+
+
+class TestGui(unittest.TestCase):
+    def test_import(self):
+        try:
+            import tkinter  # noqa: F401
+        except ImportError:
+            self.skipTest("tkinter non disponibile")
+        from verify_document import gui
+        self.assertIn("Busta", gui.RIEPILOGO)
+
+
 if __name__ == "__main__":
     unittest.main()

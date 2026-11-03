@@ -68,6 +68,50 @@ class Report:
         }
 
 
+def formatta_valore(chiave: str, v) -> str:
+    """Rende leggibile un valore estratto (importi, date, percentuali, liste)."""
+    from datetime import date
+
+    from .validators import formatta_euro
+
+    if v is None:
+        return "—"
+    if chiave.endswith("_%"):
+        return f"{v}%".replace(".", ",")
+    if isinstance(v, Decimal):
+        return formatta_euro(v)
+    if isinstance(v, date):
+        return v.strftime("%d/%m/%Y")
+    if isinstance(v, list):
+        return ", ".join(map(str, v)) or "—"
+    return str(v)
+
+
+_PAROLE = {
+    "cf": "CF", "lm": "(quadro LM)", "irpef": "IRPEF", "iva": "IVA", "inps": "INPS",
+    "redditivita": "redditività", "eta": "età",
+}
+
+
+def etichetta_campo(chiave: str) -> str:
+    parole = chiave.removesuffix("_%").split("_")
+    testo = " ".join(_PAROLE.get(p, p) for p in parole)
+    testo = testo[0].upper() + testo[1:]
+    return testo + (" %" if chiave.endswith("_%") else "")
+
+
+def report_testuale(nome_file: str, r: Report) -> str:
+    righe = ["=" * 72, f"{nome_file}  →  {r.tipo_documento}", "=" * 72, "DATI ESTRATTI"]
+    for k, v in r.dati.items():
+        if v is not None:
+            righe.append(f"  {etichetta_campo(k):<34} {formatta_valore(k, v)}")
+    righe += ["", "CONTROLLI"]
+    for c in r.controlli:
+        righe.append(f"  {SIMBOLI[c.esito]} {c.nome:<32} {c.dettaglio}")
+    righe += ["", f"ESITO COMPLESSIVO: {SIMBOLI[r.esito_globale]} {r.esito_globale.value}", ""]
+    return "\n".join(righe)
+
+
 def cerca_importo(
     testo: str,
     etichette: list[str],

@@ -110,4 +110,4 @@ def _coerenza_cf(r: Report, cf: str, info) -> None:
     else:
         verificati = [k for k in ("cognome", "nome", "data_nascita", "sesso") if d[k]]
         r.aggiungi("Coerenza CF / dati anagrafici", Esito.OK,
-                   "Coerente con: " + (", ".join(verificati) or "nessun dato confrontabile"))
+                   "Coerente con: " + (", ".join(v.replace("_", " ") for v in verificati) or "nessun dato confrontabile"))

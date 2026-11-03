@@ -100,6 +100,8 @@ python -m verify_document.gui
   **Dati estratti** e **Testo letto** (per capire cosa non è stato trovato)
 - **Esporta report…** in .txt o .json; **Rianalizza** dopo aver cambiato il tipo di documento
 - per trascinare i file nella finestra: `pip install tkinterdnd2`
+- si apre a tutto schermo; **F11** schermo intero senza bordi, **Esc** per tornare indietro
+- **⏻ Esci** (o **Ctrl+Q**, o la X della finestra) chiede conferma se ci sono documenti analizzati
 
 ## Uso da riga di comando
 

@@ -104,6 +104,11 @@ class App:
         root.title(f"Verify Document {__version__}")
         root.geometry("1180x720")
         root.minsize(900, 560)
+        self._massimizza()
+        root.protocol("WM_DELETE_WINDOW", self.esci)  # anche la X della finestra chiede conferma
+        root.bind("<Control-q>", lambda _e: self.esci())
+        root.bind("<F11>", lambda _e: self.schermo_intero())
+        root.bind("<Escape>", lambda _e: self.schermo_intero(False))
         self._stile()
         self._costruisci()
         self.root.after(150, self._controlla_coda)
@@ -118,6 +123,7 @@ class App:
         st.configure("Titolo.TLabel", font=("Segoe UI", 14, "bold"))
         st.configure("Esito.TLabel", font=("Segoe UI", 12, "bold"), padding=(10, 4))
         st.configure("Accent.TButton", font=("Segoe UI", 10, "bold"))
+        st.configure("Esci.TButton", font=("Segoe UI", 10, "bold"), foreground="#b3261e")
 
     def _costruisci(self) -> None:
         # Barra superiore
@@ -132,6 +138,8 @@ class App:
         self.var_ocr = tk.BooleanVar(value=True)
         ttk.Checkbutton(barra, text="Usa OCR per scansioni/foto", variable=self.var_ocr).pack(
             side="left", padx=10)
+        ttk.Button(barra, text="⏻  Esci", style="Esci.TButton", command=self.esci).pack(side="right")
+        ttk.Separator(barra, orient="vertical").pack(side="right", fill="y", padx=8)
         ttk.Button(barra, text="🗑  Svuota", command=self.svuota).pack(side="right")
         ttk.Button(barra, text="💾  Esporta report…", command=self.esporta).pack(side="right", padx=6)
         ttk.Button(barra, text="↻  Rianalizza", command=self.rianalizza).pack(side="right")
@@ -159,6 +167,7 @@ class App:
         self.lista.bind("<<TreeviewSelect>>", lambda _e: self.mostra_selezionato())
         suggerimento = ("Trascina qui i file oppure usa «Apri documenti…»" if self.dnd
                         else "Usa «Apri documenti…» per aggiungere file")
+        suggerimento += "  ·  F11 schermo intero  ·  Ctrl+Q esci"
         ttk.Label(sx, text=suggerimento, foreground="#666").pack(anchor="w", pady=4)
         corpo.add(sx, weight=1)
 
@@ -373,6 +382,36 @@ class App:
             self.lista.item(chiave, values=("in corso…", ""), tags=("attesa",))
             self.risultati.pop(chiave, None)
             self._avvia_analisi(Path(chiave), chiave)
+
+    def _massimizza(self) -> None:
+        """Apre la finestra a tutto schermo (massimizzata, con la barra delle applicazioni visibile)."""
+        try:
+            self.root.state("zoomed")  # Windows e macOS
+        except tk.TclError:
+            try:
+                self.root.attributes("-zoomed", True)  # Linux
+            except tk.TclError:
+                larghezza, altezza = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+                self.root.geometry(f"{larghezza}x{altezza}+0+0")
+
+    def schermo_intero(self, attivo: bool | None = None) -> None:
+        """F11: schermo intero senza bordi; Esc: torna alla finestra massimizzata."""
+        if attivo is None:
+            attivo = not self.root.attributes("-fullscreen")
+        self.root.attributes("-fullscreen", attivo)
+        if not attivo:
+            self._massimizza()
+
+    def esci(self) -> None:
+        if self.in_corso:
+            domanda = "Ci sono analisi ancora in corso. Uscire comunque?"
+        elif self.risultati:
+            domanda = "Uscire da Verify Document?\nI report non esportati andranno persi."
+        else:
+            domanda = None
+        if domanda and not messagebox.askyesno("Esci", domanda, icon="question", parent=self.root):
+            return
+        self.root.destroy()
 
     def svuota(self) -> None:
         if self.in_corso:

@@ -130,6 +130,8 @@ class App:
         ttk.Button(barra, text="🗑  Svuota", command=self.svuota).pack(side="right")
         ttk.Button(barra, text="💾  Esporta report…", command=self.esporta).pack(side="right", padx=6)
         ttk.Button(barra, text="↻  Rianalizza", command=self.rianalizza).pack(side="right")
+        ttk.Button(barra, text="⇄  Confronta documenti", style="Accent.TButton",
+                   command=self.confronta).pack(side="right", padx=6)
 
         corpo = ttk.PanedWindow(self.root, orient="horizontal")
         corpo.pack(fill="both", expand=True, padx=10, pady=(0, 6))
@@ -378,6 +380,21 @@ class App:
         self.mostra_selezionato()
         self.var_stato.set("Pronto.")
 
+    def confronta(self) -> None:
+        from .confronto import confronta
+
+        if self.in_corso:
+            messagebox.showwarning("Attendere", "Analisi ancora in corso.", parent=self.root)
+            return
+        validi = [(r.percorso.name, r.report) for r in self.risultati.values() if r.report]
+        if len(validi) < 2:
+            messagebox.showinfo("Confronto", "Apri almeno 2 documenti dello stesso cliente "
+                                "(es. più buste paga, carta d'identità, Modello Redditi).", parent=self.root)
+            return
+        esito = confronta(validi)
+        FinestraConfronto(self.root, esito)
+        self.var_stato.set(f"Confronto tra {len(validi)} documenti: {esito.report.esito_globale.value}")
+
     def esporta(self) -> None:
         validi = {k: r for k, r in self.risultati.items() if r.report}
         if not validi:
@@ -396,6 +413,100 @@ class App:
             contenuto = "\n".join(report_testuale(r.percorso.name, r.report) for r in validi.values())
         Path(dest).write_text(contenuto, encoding="utf-8")
         self.var_stato.set(f"Report salvato in {dest}")
+
+
+class FinestraConfronto:
+    """Finestra con l'esito del confronto tra i documenti caricati."""
+
+    COLONNE = [("periodo", "Periodo", 150, "w"), ("lordo", "Lordo", 110, "e"), ("netto", "Netto", 110, "e"),
+               ("netto_su_lordo", "Netto/lordo", 95, "e"), ("imponibile_fiscale", "Imponibile fiscale", 130, "e"),
+               ("progressivo_imponibile_fiscale", "Progressivo imp.", 130, "e"), ("esito", "Esito busta", 110, "center"),
+               ("file", "File", 220, "w")]
+
+    def __init__(self, parent: tk.Tk, esito):
+        self.esito = esito
+        r = esito.report
+        self.win = tk.Toplevel(parent)
+        self.win.title("Confronto tra documenti")
+        self.win.geometry("1100x680")
+        self.win.transient(parent)
+
+        intest = ttk.Frame(self.win, padding=(10, 8))
+        intest.pack(fill="x")
+        ttk.Label(intest, text=f"Confronto tra {r.dati['documenti_confrontati']} documenti",
+                  style="Titolo.TLabel").pack(side="left")
+        fg, bg = COLORI[r.esito_globale]
+        tk.Label(intest, text=f"{SIMBOLI[r.esito_globale]} {r.esito_globale.value}", fg=fg, bg=bg,
+                 font=("Segoe UI", 12, "bold"), padx=12, pady=4).pack(side="right")
+        ttk.Button(intest, text="💾  Esporta…", command=self.esporta).pack(side="right", padx=8)
+
+        divisore = ttk.PanedWindow(self.win, orient="vertical")
+        divisore.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+        f1 = ttk.Frame(divisore)
+        self.albero = ttk.Treeview(f1, columns=("esito", "controllo", "dettaglio"), show="headings")
+        for col, testo, w in [("esito", "", 40), ("controllo", "Controllo", 200), ("dettaglio", "Dettaglio", 760)]:
+            self.albero.heading(col, text=testo)
+            self.albero.column(col, width=w, anchor="center" if col == "esito" else "w",
+                               stretch=col == "dettaglio")
+        for e, (fg, bg) in COLORI.items():
+            self.albero.tag_configure(e.value, foreground=fg, background=bg)
+        self.albero.tag_configure("gruppo", foreground="#ffffff", background="#57606a",
+                                  font=("Segoe UI", 9, "bold"))
+        for gruppo, controlli in r.gruppi().items():
+            self.albero.insert("", "end", values=("", gruppo.upper(), ""), tags=("gruppo",))
+            for c in controlli:
+                self.albero.insert("", "end", values=(SIMBOLI[c.esito], c.nome, c.dettaglio),
+                                   tags=(c.esito.value,))
+        self.albero.bind("<Double-1>", self._dettaglio)
+        App._con_scrollbar(f1, self.albero)
+        divisore.add(f1, weight=3)
+
+        if esito.tabelle:
+            f2 = ttk.Frame(divisore)
+            ttk.Label(f2, text="Buste paga mese per mese", style="Titolo.TLabel").grid(
+                row=0, column=0, sticky="w", pady=(6, 4))
+            interno = ttk.Frame(f2)
+            interno.grid(row=1, column=0, sticky="nsew")
+            f2.rowconfigure(1, weight=1)
+            f2.columnconfigure(0, weight=1)
+            tab = ttk.Treeview(interno, columns=[c[0] for c in self.COLONNE], show="headings", height=6)
+            for chiave, titolo, w, anchor in self.COLONNE:
+                tab.heading(chiave, text=titolo)
+                tab.column(chiave, width=w, anchor=anchor)
+            for e, (fg, bg) in COLORI.items():
+                tab.tag_configure(e.value, foreground=fg, background=bg)
+            tab.tag_configure("gruppo", foreground="#ffffff", background="#57606a")
+            for cf, righe in esito.tabelle.items():
+                if len(esito.tabelle) > 1:
+                    tab.insert("", "end", values=(f"CLIENTE {cf}",), tags=("gruppo",))
+                for riga in righe:
+                    valori = [formatta_valore(k + ("_%" if k == "netto_su_lordo" else ""), riga.get(k))
+                              for k, *_ in self.COLONNE]
+                    tab.insert("", "end", values=valori, tags=(riga["esito"],))
+            App._con_scrollbar(interno, tab)
+            divisore.add(f2, weight=2)
+
+    def _dettaglio(self, _e) -> None:
+        sel = self.albero.selection()
+        if sel:
+            _, nome, dettaglio = self.albero.item(sel[0], "values")
+            if dettaglio:
+                messagebox.showinfo(nome, dettaglio, parent=self.win)
+
+    def esporta(self) -> None:
+        from .confronto import confronto_testuale
+
+        dest = filedialog.asksaveasfilename(parent=self.win, title="Salva confronto",
+                                            defaultextension=".txt", initialfile="confronto_documenti.txt",
+                                            filetypes=[("Testo", "*.txt"), ("JSON", "*.json")])
+        if not dest:
+            return
+        if dest.lower().endswith(".json"):
+            contenuto = json.dumps(self.esito.report.to_dict(), ensure_ascii=False, indent=2)
+        else:
+            contenuto = confronto_testuale(self.esito)
+        Path(dest).write_text(contenuto, encoding="utf-8")
 
 
 def main(file_iniziali: list[str] | None = None) -> None:

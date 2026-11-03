@@ -23,6 +23,9 @@ from .validators import (
     valida_partita_iva,
 )
 
+# esclude le diciture dei progressivi annui ("Progressivo imponibile fiscale")
+_NO_PROGR = r"(?<!progressivo\s)(?<!progr\.\s)"
+
 ETICHETTE = {
     "totale_competenze": [
         r"totale\s+competenze", r"tot\.?\s*competenze", r"totale\s+lordo", r"lordo\s+mensile",
@@ -43,9 +46,18 @@ ETICHETTE = {
         r"contributi\s+(?:inps\s+)?(?:a\s+carico\s+)?dipendente", r"contributo\s+ivs",
         r"contributi\s+inps", r"ritenute\s+previdenziali", r"totale\s+contributi",
     ],
-    "imponibile_fiscale": [r"imponibile\s+fiscale", r"imponibile\s+irpef", r"imp\.?\s*fisc\.?"],
+    "imponibile_fiscale": [_NO_PROGR + r"imponibile\s+fiscale(?!\s+progr)",
+                           _NO_PROGR + r"imponibile\s+irpef(?!\s+progr)", r"imp\.?\s*fisc\.?(?!\s*progr)"],
     "irpef_lorda": [r"irpef\s+lorda"],
-    "irpef_netta": [r"irpef\s+netta", r"ritenute\s+irpef"],
+    "irpef_netta": [r"irpef\s+netta(?!\s+progr)", _NO_PROGR + r"ritenute\s+irpef(?!\s+progr)"],
+    # progressivi annui (da gennaio al mese corrente): usati nel confronto tra buste paga
+    "progressivo_imponibile_fiscale": [
+        r"progr(?:essivo|\.)?\s+imponibile\s+fiscale", r"imponibile\s+fiscale\s+progr(?:essivo|\.)?",
+        r"imp\.?\s*fisc\.?\s*progr\.?",
+    ],
+    "progressivo_irpef": [
+        r"progr(?:essivo|\.)?\s+(?:irpef|ritenute\s+irpef)", r"irpef\s+(?:netta\s+)?progr(?:essiva|\.)?",
+    ],
 }
 
 ETICHETTE_ASSUNZIONE = [r"data\s+(?:di\s+)?assunzione", r"data\s+assunz\.?", r"assunto\s+il", r"assunzione"]
@@ -117,6 +129,11 @@ def analizza(testo: str) -> Report:
     # --- Anagrafica ---------------------------------------------------------
     periodo = _trova_periodo(testo)
     d["periodo"] = periodo
+    # cedolino di 13ª/14ª: cercato solo nell'intestazione (i "ratei 13ª" compaiono in ogni busta)
+    intestazione = "\n".join(testo.strip().splitlines()[:6])
+    d["mensilita_aggiuntiva"] = bool(re.search(
+        r"(?<!ratei\s)(?<!rateo\s)\b(tredicesima|quattordicesima|1[34]\s*[ªa°^]\s*mensilit|mensilit[aà]\s+aggiuntiva)",
+        intestazione, re.IGNORECASE)) or None
 
     piva = _trova_piva(testo)
     d["partita_iva_azienda"] = piva

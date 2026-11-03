@@ -70,11 +70,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--testo", action="store_true", help="mostra il testo estratto (debug)")
     parser.add_argument("--no-autenticita", action="store_true",
                         help="non esaminare il file PDF in cerca di alterazioni")
+    parser.add_argument("--confronta", action="store_true",
+                        help="confronta tra loro i documenti (stesso cliente, buste paga consecutive, ...)")
     parser.add_argument("--version", action="version", version=__version__)
     args = parser.parse_args(argv)
 
     codice_uscita = 0
     risultati = []
+    analizzati = []
     for f in args.file:
         try:
             testo, r = analizza_documento(f, args.tipo, not args.no_ocr, not args.no_autenticita)
@@ -86,10 +89,21 @@ def main(argv: list[str] | None = None) -> int:
             continue
         if r.esito_globale.value == "ERRORE":
             codice_uscita = max(codice_uscita, 1)
+        analizzati.append((Path(f).name, r))
         if args.json:
             risultati.append({"file": str(f), **r.to_dict()})
         else:
             stampa_report(str(f), r)
+    if args.confronta:
+        from .confronto import confronta, confronto_testuale
+
+        c = confronta(analizzati)
+        if c.report.esito_globale.value == "ERRORE":
+            codice_uscita = max(codice_uscita, 1)
+        if args.json:
+            risultati = {"documenti": risultati, "confronto": c.report.to_dict()}
+        else:
+            print(confronto_testuale(c))
     if args.json:
         print(json.dumps(risultati, ensure_ascii=False, indent=2))
     return codice_uscita

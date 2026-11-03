@@ -57,6 +57,30 @@ Oltre a verificare che i calcoli tornino, il programma esamina il file PDF e ass
 > Nessun controllo automatico può **certificare** l'originalità: lo strumento segnala anomalie
 > che un operatore deve valutare. Un indice basso non garantisce che il documento sia autentico.
 
+## Confronto tra documenti dello stesso cliente
+
+Caricando più documenti (es. 3 buste paga consecutive + carta d'identità + Modello Redditi) e premendo
+**⇄ Confronta documenti** (o con `--confronta` da riga di comando) il programma verifica:
+
+| Controllo | Cosa scopre |
+|---|---|
+| Stesso codice fiscale su tutti i documenti | Documenti di persone diverse mescolati |
+| Stessa P.IVA e stessa data di assunzione | Busta paga presa da un'altra azienda o alterata |
+| **Progressivi annui**: progressivo del mese = progressivo precedente + imponibile del mese | Busta gonfiata ricalcolando tutto in modo coerente (da sola sembra regolare!) |
+| Arrotondamento "precedente" = arrotondamento "attuale" del mese prima | Netto ritoccato |
+| Rapporto netto/lordo e netto simili agli altri mesi | Netto alterato senza ricalcolare il lordo |
+| Mesi doppi (con netto diverso) o mancanti | Due versioni dello stesso cedolino |
+| Buste paga ↔ reddito da lavoro dipendente del Modello Redditi dello stesso anno | Redditi dichiarati diversi da quelli delle buste |
+| Più anni di Modello Redditi | Cambi di regime, variazioni di reddito molto forti |
+
+![Confronto tra documenti](docs/confronto.png)
+
+Prova con i documenti di esempio:
+
+```bash
+python -m verify_document esempi/confronto/*.txt --confronta
+```
+
 ## Interfaccia grafica
 
 ![Interfaccia grafica](docs/interfaccia.png)
@@ -102,10 +126,11 @@ verify_document/
   modello_redditi.py  analisi Modello Redditi PF
   anagrafica.py       analisi documenti d'identità
   autenticita.py      esame del file PDF (segni di alterazione)
+  confronto.py        confronto tra più documenti dello stesso cliente
   report.py           esiti dei controlli
   cli.py              riga di comando
   gui.py              interfaccia grafica (Tkinter)
-esempi/               documenti FITTIZI di prova
+esempi/               documenti FITTIZI di prova (esempi/confronto: 3 buste + carta d'identità)
 tests/                test automatici
 ```
 

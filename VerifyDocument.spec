@@ -38,7 +38,7 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
-    excludes=["numpy", "pandas", "scipy", "matplotlib", "IPython", "pytest", "pypdf"],
+    excludes=["pandas", "scipy", "matplotlib", "IPython", "pytest", "pypdf"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

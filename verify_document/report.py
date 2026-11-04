@@ -176,6 +176,18 @@ def cerca_importo(
         r"(?<![\w/.,])(" + (IMPORTO_DECIMALI if solo_decimali else IMPORTO_ANCHE_INTERO) + r")"
         r"(?![\w/])"
     )
+    # documenti con le posizioni delle parole (PDF e scansioni): valore nella stessa riga o nella cella sotto
+    from .layout import cerca_valore, parole_correnti
+
+    if parole_correnti():
+        etichetta_trovata = False
+        for etichetta in etichette:
+            trovata, valore = cerca_valore(etichetta, regex_importo.pattern)
+            etichetta_trovata |= trovata
+            if valore is not None and parse_importo(valore) is not None:
+                return parse_importo(valore)
+        if etichetta_trovata:
+            return None  # etichetta presente ma senza valore: meglio nessun valore che uno sbagliato
     for etichetta in etichette:
         for m in re.finditer(etichetta, testo, flags=re.IGNORECASE):
             coda = testo[m.end(): m.end() + finestra]
@@ -196,6 +208,14 @@ def cerca_importo(
 
 
 def cerca_testo(testo: str, etichette: list[str], valore: str = r"(.+)") -> str | None:
+    from .layout import cerca_valore, parole_correnti
+
+    if parole_correnti() and valore != r"(.+)":
+        numerico = "\\d" in valore and "A-Z" not in valore
+        for etichetta in etichette:
+            _, trovato = cerca_valore(etichetta, valore, numerico=numerico, ignora_maiuscole=True)
+            if trovato:
+                return trovato
     for etichetta in etichette:
         m = re.search(etichetta + r"\s*[:\-]?\s*" + valore, testo, flags=re.IGNORECASE)
         if m:

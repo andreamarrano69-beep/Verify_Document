@@ -1,0 +1,94 @@
+"""Genera buste paga con impaginazione "da software paghe" (riquadri, griglia, etichette sopra e valori
+sotto in colonne) e le relative scansioni rumorose e storte, per i test di lettura e OCR."""
+
+from pathlib import Path
+
+ATTESI = {
+    "totale_competenze": "2150.00", "totale_trattenute": "517.74", "netto": "1632.00",
+    "arrotondamento": "0.14", "arrotondamento_precedente": "0.40", "imponibile_previdenziale": "2150.00",
+    "contributi_dipendente": "197.59", "irpef_lorda": "449.05", "irpef_netta": "320.15",
+}
+
+
+def busta_a_colonne(percorso: Path) -> Path:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(str(percorso), pagesize=A4)
+    _, altezza = A4
+
+    def cella(x, y, w, h, etichetta, valore, a_destra=False):
+        c.setLineWidth(0.8)
+        c.rect(x, y, w, h)
+        c.setFont("Helvetica", 6.5)
+        c.drawString(x + 3, y + h - 8, etichetta)
+        c.setFont("Helvetica-Bold", 9)
+        if a_destra:
+            c.drawRightString(x + w - 4, y + 5, valore)
+        else:
+            c.drawString(x + 4, y + 5, valore)
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(30, altezza - 40, "CEDOLINO PAGA")
+    c.setFont("Helvetica", 8)
+    c.drawString(400, altezza - 40, "LIBRO UNICO DEL LAVORO")
+    y = altezza - 80
+    cella(30, y, 300, 26, "AZIENDA", "ESEMPIO SRL - VIA ROMA 1 ROMA")
+    cella(330, y, 120, 26, "PARTITA IVA", "12345678903")
+    cella(450, y, 115, 26, "PERIODO DI RETRIBUZIONE", "OTTOBRE 2026")
+    y -= 26
+    cella(30, y, 220, 26, "COGNOME E NOME", "ROSSI MARIO")
+    cella(250, y, 140, 26, "CODICE FISCALE", "RSSMRA80A01H501U")
+    cella(390, y, 90, 26, "DATA ASSUNZIONE", "01/03/2019")
+    cella(480, y, 85, 26, "LIVELLO", "4")
+    y -= 30
+    colonne = [30, 80, 330, 390, 470, 565]
+    c.setFont("Helvetica-Bold", 7)
+    c.rect(30, y, 535, 16)
+    for i, t in enumerate(["COD.", "DESCRIZIONE", "ORE/GG", "COMPETENZE", "TRATTENUTE"]):
+        c.drawString(colonne[i] + 3, y + 5, t)
+    voci = [("0010", "Retribuzione ordinaria", "168,00", "2.000,00", ""), ("0020", "Superminimo", "", "150,00", ""),
+            ("1000", "Contributo IVS", "", "", "197,59"), ("2000", "Ritenute IRPEF", "", "", "320,15")]
+    c.setFont("Helvetica", 8.5)
+    for voce in voci:
+        y -= 15
+        c.rect(30, y, 535, 15)
+        for i, v in enumerate(voce):
+            if i >= 2:
+                c.drawRightString(colonne[i + 1] - 4, y + 4, v)
+            else:
+                c.drawString(colonne[i] + 3, y + 4, v)
+    for x in colonne[1:-1]:
+        c.line(x, y, x, y + 16 + 15 * len(voci))
+    larghezza = 535 / 5
+    y -= 40
+    for i, (e, v) in enumerate([("IMPONIBILE PREVIDENZIALE", "2.150,00"), ("CONTRIBUTI DIPENDENTE", "197,59"),
+                                ("IMPONIBILE FISCALE", "1.952,41"), ("IRPEF LORDA", "449,05"),
+                                ("IRPEF NETTA", "320,15")]):
+        cella(30 + i * larghezza, y, larghezza, 26, e, v, a_destra=True)
+    y -= 40
+    for i, (e, v) in enumerate([("TOTALE COMPETENZE", "2.150,00"), ("TOTALE TRATTENUTE", "517,74"),
+                                ("ARROTONDAMENTO PRECEDENTE", "0,40"), ("ARROTONDAMENTO ATTUALE", "0,14"),
+                                ("NETTO DEL MESE", "1.632,00")]):
+        cella(30 + i * larghezza, y, larghezza, 30, e, v, a_destra=True)
+    c.save()
+    return percorso
+
+
+def scansione(pdf: Path, uscita: Path, dpi: int = 200, angolo: float = -2.0, seme: int = 2) -> Path:
+    """Simula una scansione: storta, sfocata, rumorosa, carta grigia, compressione JPEG; salvata come PDF."""
+    import numpy as np
+    import pypdfium2 as pdfium
+    from PIL import Image, ImageFilter
+
+    documento = pdfium.PdfDocument(str(pdf))
+    img = documento[0].render(scale=dpi / 72).to_pil().convert("L")
+    documento.close()
+    img = img.rotate(angolo, expand=True, fillcolor=255, resample=Image.BICUBIC).filter(ImageFilter.GaussianBlur(0.8))
+    a = np.asarray(img).astype(np.int16) + np.random.default_rng(seme).normal(0, 18, img.size[::-1]).astype(np.int16)
+    img = Image.fromarray((a * 0.85 + 30).clip(0, 255).astype(np.uint8))
+    jpg = uscita.with_suffix(".jpg")
+    img.save(jpg, quality=55)
+    with Image.open(jpg) as j:
+        j.save(uscita, resolution=dpi)
+    return uscita

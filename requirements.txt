@@ -7,6 +7,8 @@ reportlab>=4.0
 # OCR per documenti scansionati e foto (richiede il programma Tesseract: nel .exe è già incluso)
 pytesseract>=0.3
 Pillow>=10
+# Pulizia delle immagini prima dell'OCR (raddrizzamento, sfondo, linee delle tabelle)
+numpy>=1.24
 # Eliminazione dei documenti dell'archivio nel Cestino (recuperabili)
 Send2Trash>=1.8
 # --- Opzionale: trascinare i file nella finestra dell'interfaccia grafica ---

@@ -42,6 +42,15 @@ l'OCR **Tesseract**:
 - **da Python**: installare Tesseract da <https://github.com/UB-Mannheim/tesseract/wiki>
   (durante l'installazione selezionare la lingua **Italian**). Il programma lo trova da solo anche se non è nel PATH.
 
+Prima dell'OCR l'immagine viene **ripulita**: rotazione (pagine girate), raddrizzamento (pagine storte),
+ingrandimento a ~300 DPI, sfondo uniforme (ombre, carta grigia), bianco e nero e **rimozione delle linee
+delle tabelle**. Vengono fatte più letture e quella principale è integrata dove ha lasciato vuoti.
+
+**Etichette e valori in colonna**: in molti cedolini il valore sta **sotto** l'etichetta
+(es. `TOTALE TRATTENUTE` e sotto `517,74`). Il programma usa la **posizione** delle parole sulla pagina
+(sia nei PDF con testo sia nelle scansioni) per prendere il valore della cella giusta, e riconosce
+anche etichette lette con qualche lettera sbagliata (es. «METTO DEL MESE»).
+
 La barra in basso dell'interfaccia indica se l'OCR è attivo. Se non lo è, il comando
 `python -m verify_document.diagnosi` spiega cosa manca (libreria pytesseract, Tesseract, lingua italiana). Gli errori tipici dell'OCR sui numeri
 (O al posto di 0, l al posto di 1, spazi dentro gli importi) vengono corretti automaticamente.
@@ -252,7 +261,9 @@ python -m unittest discover -s tests -v
 
 ```
 verify_document/
-  estrazione.py       testo da PDF / OCR
+  estrazione.py       testo e posizione delle parole da PDF / OCR
+  preelaborazione.py  pulizia delle immagini prima dell'OCR
+  layout.py           abbinamento etichetta → valore in base alla posizione (colonne)
   validators.py       codice fiscale, partita IVA, importi, date
   busta_paga.py       analisi cedolino
   modello_redditi.py  analisi Modello Redditi PF

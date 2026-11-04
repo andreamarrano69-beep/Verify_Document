@@ -43,8 +43,12 @@ def analizza_documento(
     percorso: str | Path, tipo: str = "auto", usa_ocr: bool = True, autenticita: bool = True
 ) -> tuple[str, Report]:
     """Estrae il testo, analizza i dati e, per i PDF, esamina il file in cerca di alterazioni."""
-    testo = estrai_testo(percorso, usa_ocr=usa_ocr)
-    report = analizza_testo(testo, tipo)
+    from .estrazione import estrai_documento
+    from .layout import contesto_parole
+
+    testo, parole = estrai_documento(percorso, usa_ocr=usa_ocr)
+    with contesto_parole(parole):  # posizioni delle parole: abbinamento etichetta → valore per colonne
+        report = analizza_testo(testo, tipo)
     if autenticita and Path(percorso).suffix.lower() == ".pdf":
         from .autenticita import aggiungi_al_report
 

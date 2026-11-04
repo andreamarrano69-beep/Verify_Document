@@ -38,30 +38,42 @@ MIN_CARATTERI_PAGINA = 30  # sotto questa soglia la pagina è probabilmente una 
 
 
 def estrai_testo(percorso: str | Path, usa_ocr: bool = True) -> str:
+    return estrai_documento(percorso, usa_ocr)[0]
+
+
+def estrai_documento(percorso: str | Path, usa_ocr: bool = True) -> tuple[str, list]:
+    """Restituisce (testo, parole con posizione). Per i file .txt le parole non ci sono."""
     p = Path(percorso)
     if not p.exists():
         raise ErroreEstrazione(f"File non trovato: {p}")
     ext = p.suffix.lower()
     if ext in {".txt", ".text"}:
-        return p.read_text(encoding="utf-8", errors="replace")
+        return p.read_text(encoding="utf-8", errors="replace"), []
     if ext == ".pdf":
-        return _testo_da_pdf(p, usa_ocr)
+        return _da_pdf(p, usa_ocr)
     if ext in ESTENSIONI_IMMAGINE:
         if not usa_ocr:
             raise ErroreEstrazione("Il file è un'immagine: serve l'OCR (rimuovi --no-ocr).")
         from PIL import Image
 
-        return _ocr_immagine(Image.open(p))
+        return _ocr_parole(Image.open(p))
     raise ErroreEstrazione(f"Formato non supportato: {ext}")
 
 
-def _testo_da_pdf(p: Path, usa_ocr: bool) -> str:
+DPI_OCR = 300
+SPAZIO_TRA_PAGINE = 50  # punti: le pagine vengono "impilate" in un'unica colonna di coordinate
+
+
+def _da_pdf(p: Path, usa_ocr: bool) -> tuple[str, list]:
     try:
         import pdfplumber
     except ImportError as e:  # pragma: no cover
         raise ErroreEstrazione("Installa pdfplumber: pip install pdfplumber") from e
+    from .layout import Parola
 
     pagine: list[str] = []
+    parole_pagine: list[list[Parola]] = []
+    altezze: list[float] = []
     pagine_da_ocr: list[int] = []
     with pdfplumber.open(p) as pdf:
         for i, pagina in enumerate(pdf.pages):
@@ -70,30 +82,43 @@ def _testo_da_pdf(p: Path, usa_ocr: bool) -> str:
             if len(testo.strip()) < MIN_CARATTERI_PAGINA:
                 pagine_da_ocr.append(i)
             pagine.append(testo)
+            altezze.append(float(pagina.height))
+            parole_pagine.append([Parola(w["text"], w["x0"], w["x1"], w["top"], w["bottom"])
+                                  for w in pagina.extract_words(x_tolerance=1.5, y_tolerance=2)])
 
+    errore_ocr = None
     if pagine_da_ocr and usa_ocr:
         for i in pagine_da_ocr:
             try:
-                pagine[i] = _ocr_pagina_pdf(p, i)
-            except ErroreEstrazione:
-                if not any(t.strip() for t in pagine):
-                    raise
+                pagine[i], parole_pagine[i] = _ocr_pagina_pdf(p, i)
+            except ErroreEstrazione as e:
+                errore_ocr = e
     testo = "\n".join(pagine)
     if not testo.strip():
         if not usa_ocr:
             raise ErroreEstrazione("PDF senza testo (scansione): attiva l'opzione OCR per leggerlo.")
-        raise ErroreEstrazione(ISTRUZIONI_TESSERACT)
-    return testo
+        raise errore_ocr or ErroreEstrazione(ISTRUZIONI_TESSERACT)
+
+    parole, scostamento = [], 0.0
+    for altezza, parole_pagina in zip(altezze, parole_pagine):
+        for w in parole_pagina:
+            parole.append(Parola(w.testo, w.x0, w.x1, w.top + scostamento, w.bottom + scostamento))
+        scostamento += altezza + SPAZIO_TRA_PAGINE
+    return testo, parole
 
 
-def _ocr_pagina_pdf(p: Path, indice: int) -> str:
+def _ocr_pagina_pdf(p: Path, indice: int) -> tuple[str, list]:
     try:
         import pypdfium2 as pdfium
     except ImportError as e:  # pragma: no cover
         raise ErroreEstrazione("Installa pypdfium2 per l'OCR dei PDF: pip install pypdfium2") from e
     pdf = pdfium.PdfDocument(str(p))
-    immagine = pdf[indice].render(scale=300 / 72).to_pil()  # ~300 DPI
-    return _ocr_immagine(immagine)
+    try:
+        immagine = pdf[indice].render(scale=DPI_OCR / 72).to_pil()
+    finally:
+        pdf.close()
+    # coordinate riportate in punti PDF, come per le pagine con testo
+    return _ocr_parole(immagine, pixel_per_punto=DPI_OCR / 72)
 
 
 def _candidati_tesseract() -> list[Path]:
@@ -146,6 +171,8 @@ def normalizza_ocr(testo: str) -> str:
     """Corregge gli errori tipici dell'OCR sui numeri (O→0, l/I→1, spazi dentro gli importi)."""
     testo = _CIFRA_O.sub("0", testo)
     testo = _CIFRA_1.sub("1", testo)
+    # "320.15" -> "320,15", "1.632.00" -> "1.632,00" (punto letto al posto della virgola; non tocca le date)
+    testo = re.sub(r"(?<![\d.,])(\d{1,3}(?:\.\d{3})*)\.(\d{2})(?!\.?\d)", r"\1,\2", testo)
     # "1. 632,00" o "1.632, 00" -> "1.632,00"
     testo = re.sub(r"(?<=\d)([.,]) (?=\d{2,3}\b)", r"\1", testo)
     # simbolo dell'euro letto come "€", "E" o "C" attaccato all'importo
@@ -153,7 +180,32 @@ def normalizza_ocr(testo: str) -> str:
     return testo
 
 
+VARIANTI_OCR = (("pulita", 6), ("pulita", 11), ("grigia", 6))
+SOGLIA_FIDUCIA = 35
+
+
+def _combina_letture(letture: list[list[tuple]]) -> list[tuple]:
+    """La prima lettura è la principale; le altre aggiungono solo parole dove la principale non ha letto nulla."""
+    def sovrapposte(a, b):
+        _, _, x, y, w, h = a
+        _, _, x2, y2, w2, h2 = b
+        ix = min(x + w, x2 + w2) - max(x, x2)
+        iy = min(y + h, y2 + h2) - max(y, y2)
+        return ix > 0 and iy > 0 and ix * iy > 0.2 * min(w * h, w2 * h2)
+
+    scelte = list(letture[0]) if letture else []
+    for lettura in letture[1:]:
+        aggiunte = [c for c in lettura if c[1] >= 60 and not any(sovrapposte(c, s) for s in scelte)]
+        scelte += aggiunte
+    return scelte
+
+
 def _ocr_immagine(immagine) -> str:
+    return _ocr_parole(immagine)[0]
+
+
+def _ocr_parole(immagine, pixel_per_punto: float | None = None) -> tuple[str, list]:
+    """OCR con pre-elaborazione dell'immagine; restituisce (testo con colonne, parole con posizione)."""
     try:
         import pytesseract
     except ImportError as e:
@@ -163,12 +215,36 @@ def _ocr_immagine(immagine) -> str:
         raise ErroreEstrazione(ISTRUZIONI_TESSERACT)
     from PIL import ImageOps
 
-    immagine = ImageOps.exif_transpose(immagine).convert("L")  # foto da telefono: rotazione e scala di grigi
-    if immagine.width < 1500:  # immagini piccole: ingrandire migliora molto l'OCR
-        fattore = 1500 / immagine.width
-        immagine = immagine.resize((int(immagine.width * fattore), int(immagine.height * fattore)))
-    try:
-        testo = pytesseract.image_to_string(immagine, lang=lingua or None, config=CONFIG_OCR)
-    except pytesseract.TesseractError:
-        testo = pytesseract.image_to_string(immagine, config=CONFIG_OCR)
-    return normalizza_ocr(testo)
+    from .layout import Parola, testo_da_parole
+    from .preelaborazione import prepara_per_ocr
+
+    grigia = ImageOps.exif_transpose(immagine).convert("L")
+    larghezza_originale = grigia.width
+    varianti = prepara_per_ocr(grigia, pytesseract, lingua)
+    fattore = varianti.fattore  # ingrandimento applicato
+    if pixel_per_punto is None:  # immagini (JPG/PNG): coordinate riportate a "punti" di un A4
+        pixel_per_punto = larghezza_originale / 595.0
+
+    # Lettura principale sull'immagine pulita (senza linee); le altre letture riempiono solo le zone in cui la
+    # principale non ha riconosciuto nulla (es. testo molto chiaro rimasto fuori dalla soglia).
+    letture = []
+    for img, psm in VARIANTI_OCR:
+        candidati = []
+        immagine_ocr = varianti.pulita if img == "pulita" else varianti.grigia
+        dati = pytesseract.image_to_data(immagine_ocr, lang=lingua or None, output_type=pytesseract.Output.DICT,
+                                         config=f"--psm {psm} -c preserve_interword_spaces=1")
+        for testo, conf, x, y, w, h in zip(dati["text"], dati["conf"], dati["left"], dati["top"],
+                                           dati["width"], dati["height"]):
+            testo, conf = (testo or "").strip(), float(conf)
+            if not testo or conf < SOGLIA_FIDUCIA or w <= 0 or h <= 0:
+                continue
+            if not re.search(r"[A-Za-zÀ-ÿ0-9]", testo):
+                continue  # residui di linee e macchie ("|", "—", "_")
+            candidati.append((testo, conf, x, y, w, h))
+        letture.append(candidati)
+    migliori = _combina_letture(letture)
+
+    scala = 1.0 / (fattore * pixel_per_punto)
+    parole = [Parola(normalizza_ocr(t), x * scala, (x + w) * scala, y * scala, (y + h) * scala)
+              for t, _, x, y, w, h in migliori]
+    return normalizza_ocr(testo_da_parole(parole)), parole

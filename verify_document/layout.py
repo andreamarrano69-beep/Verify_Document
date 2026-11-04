@@ -181,6 +181,15 @@ class _Corrispondenza:
         return self._f
 
 
+_QUANTITA = re.compile(r"\d+,\d{3,}|\d[\d.,]*\s*(?:%|ORE\b|GG\b|H\b)", re.IGNORECASE)
+
+
+def _solo_quantita(testo: str) -> bool:
+    """Vero se tutti i numeri della cella sono ore, tariffe (3+ decimali) o percentuali, non importi."""
+    numeri = re.findall(r"\d[\d.,]*\s*(?:%|ORE\b|GG\b|H\b)?", testo, re.IGNORECASE)
+    return bool(numeri) and all(_QUANTITA.fullmatch(n.strip()) for n in numeri)
+
+
 def _numero_di_casella(testo: str, match) -> bool:
     """Un intero senza decimali seguito subito da una descrizione è il numero di una casella ("8 Data inizio")."""
     valore = match.group(0)
@@ -280,6 +289,9 @@ def cerca_valore(etichetta: str, valore: str, parole: list[Parola] | None = None
                 # solo parole NON allineate all'etichetta: descrizione di una casella vicina (es. "di famiglia")
                 # di cui l'OCR ha perso l'inizio -> si salta; una riga con numeri invece ferma la ricerca
                 if not mv and not re.search(r"\d", testo_cella) and abs(cella[0].x0 - x0) > 3 * h:
+                    continue
+                # solo ore, tariffe o percentuali ("8,22500 ORE", "27,22500"): non sono importi -> si salta
+                if not mv and _solo_quantita(testo_cella):
                     continue
                 break
     return trovata, None

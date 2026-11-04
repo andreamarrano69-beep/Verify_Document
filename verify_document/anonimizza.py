@@ -28,6 +28,16 @@ def anonimizza(testo: str, report: Report | None = None) -> str:
         for chiave in ("codice_fiscale", "codice_fiscale_dipendente", "codice_fiscale_contribuente",
                        "codice_fiscale_pensionato"):
             if d.get(chiave):
+                from .validators import decodifica_codice_fiscale, nominativo_da_cf
+
+                if not nomi:  # nome senza etichetta: lo si cerca con il codice fiscale
+                    trovato = nominativo_da_cf(testo, d[chiave])
+                    if trovato:
+                        nomi.update(p for p in trovato.split() if len(p) >= 3)
+                nascita = decodifica_codice_fiscale(d[chiave]).data_nascita
+                if nascita:  # data di nascita in tutti i formati
+                    for sep in "/-.":
+                        t = t.replace(nascita.strftime(f"%d{sep}%m{sep}%Y"), f"00{sep}00{sep}0000")
                 t = t.replace(d[chiave], "XXXXXX00X00X000X")
     for nome in sorted(nomi, key=len, reverse=True):
         t = re.sub(rf"\b{re.escape(nome)}\b", "X" * len(nome), t, flags=re.IGNORECASE)

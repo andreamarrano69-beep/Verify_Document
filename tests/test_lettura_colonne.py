@@ -181,3 +181,52 @@ class TestTestiOcrReali(unittest.TestCase):
         self.assertEqual(d["imposta_lorda"], Decimal("5837.71"))
         self.assertEqual(d["imponibile_previdenziale"], Decimal("27950.00"))
         self.assertNotEqual(r.esito_globale, Esito.ERRORE, r.to_dict()["controlli"])
+
+
+class TestBustaZucchettiMultipagina(unittest.TestCase):
+    """Busta INVENTATA con l'impaginazione dei cedolini edili a più pagine (Zucchetti)."""
+
+    @classmethod
+    def setUpClass(cls):
+        from buste_realistiche import busta_zucchetti_multipagina
+
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.dir = Path(cls.tmp.name)
+        cls.busta = busta_zucchetti_multipagina(cls.dir / "zucchetti.pdf")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_lettura_completa(self):
+        from buste_realistiche import ZUCCHETTI_ATTESI
+
+        testo, r = analizza_documento(self.busta, autenticita=False)
+        for chiave, atteso in ZUCCHETTI_ATTESI.items():
+            self.assertEqual(r.dati.get(chiave), Decimal(atteso), f"{chiave}\n{testo}")
+        self.assertEqual(r.dati["nominativo"], "ROSSI MARIO")   # senza etichetta: trovato con il CF
+        self.assertEqual(r.dati["data_assunzione"].isoformat(), "2024-11-11")
+        k = {c.nome: c for c in r.controlli}
+        self.assertEqual(k["Quadratura netto"].esito, Esito.OK)
+        self.assertEqual(k["Contributi INPS"].esito, Esito.OK)   # IVS sommati da 2 pagine: 9,19%
+        self.assertEqual(k["Calcolo delle voci"].esito, Esito.OK)
+        self.assertNotEqual(r.esito_globale, Esito.ERRORE)
+
+    def test_voce_alterata(self):
+        from buste_realistiche import busta_zucchetti_multipagina
+
+        # retribuzione gonfiata senza rifare il calcolo tariffa × ore
+        alterata = busta_zucchetti_multipagina(self.dir / "alterata.pdf", {"665,94": "865,94"})
+        _, r = analizza_documento(alterata, autenticita=False)
+        k = {c.nome: c for c in r.controlli}
+        self.assertEqual(k["Calcolo delle voci"].esito, Esito.ERRORE)
+        self.assertIn("Retribuzione edili", k["Calcolo delle voci"].dettaglio)
+
+    def test_anonimizzazione(self):
+        from verify_document.anonimizza import anonimizza
+
+        testo, r = analizza_documento(self.busta, autenticita=False)
+        a = anonimizza(testo, r)
+        for dato in ("ROSSI", "MARIO", "RSSMRA80A01H501U", "01-01-1980"):
+            self.assertNotIn(dato, a)
+        self.assertIn("1.001,00", a)

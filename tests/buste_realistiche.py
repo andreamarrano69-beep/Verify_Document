@@ -179,3 +179,112 @@ def cu_a_caselle(percorso: Path, sostituzioni: dict | None = None) -> Path:
         casella(30 + i * w3, y, w3, 32, n, d, v)
     c.save()
     return percorso
+
+
+ZUCCHETTI_ATTESI = {
+    "totale_competenze": "1219.37", "totale_trattenute": "218.64", "arrotondamento": "0.27", "netto": "1001.00",
+    "contributi_dipendente": "112.03", "imponibile_previdenziale": "1219.00", "imponibile_fiscale": "1025.93",
+    "irpef_lorda": "235.96", "irpef_netta": "85.96",
+    "progressivo_imponibile_fiscale": "8900.00", "progressivo_irpef": "700.00",
+}
+
+
+def busta_zucchetti_multipagina(percorso: Path, sostituzioni: dict | None = None) -> Path:
+    """Busta paga INVENTATA con l'impaginazione dei cedolini edili a più pagine (una per cantiere):
+    intestazioni con la "s" al posto degli spazi, nome senza etichetta, voci con il calcolo,
+    progressivi e totali nell'ultima pagina, netto due righe sotto l'etichetta con le ore in mezzo."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    sostituzioni = sostituzioni or {}
+    c = canvas.Canvas(str(percorso), pagesize=A4)
+    _, altezza = A4
+
+    def scrivi(x, y, testo, font="Helvetica", dim=7):
+        testo = sostituzioni.get(testo, testo)
+        c.setFont(font, dim)
+        c.drawString(x, altezza - y, testo)
+
+    def destra(x, y, testo, dim=7.5):
+        testo = sostituzioni.get(testo, testo)
+        c.setFont("Courier", dim)
+        c.drawRightString(x, altezza - y, testo)
+
+    def intestazione(n, cantiere):
+        scrivi(30, 30, "CodicesAzienda RagionesSociale", dim=6)
+        scrivi(30, 40, "000010  ESEMPIO EDILE S.R.L.  VIA ROMA 1  00100 ROMA (RM)", "Courier", 7.5)
+        scrivi(30, 55, "CodicesFiscale PosizionesInps P.A.T.sInail", dim=6)
+        scrivi(380, 55, "PERIODOsDIsRETRIBUZIONE", dim=6)
+        scrivi(30, 65, "12345678903  0000000000/00 000000000/00", "Courier", 7.5)
+        scrivi(380, 65, f"Settembre 2026 {n}", "Courier", 7.5)
+        scrivi(30, 75, f"Codice cantiere : {cantiere}", "Courier", 7.5)
+        scrivi(30, 90, "Codicesdipendente COGNOMEsEsNOME", dim=6)
+        scrivi(330, 90, "CodicesFiscale sMatricola", dim=6)
+        scrivi(30, 100, "0000072   ROSSI MARIO", "Courier", 7.5)
+        scrivi(330, 100, "RSSMRA80A01H501U", "Courier", 7.5)
+        scrivi(30, 115, "DatasdisNascita DatasAssunzione DatasCessazione", dim=6)
+        scrivi(30, 125, "01-01-1980 11-11-2024", "Courier", 7.5)
+        scrivi(60, 145, "VOCIsVARIABILIsDELsMESE", dim=6)
+        scrivi(330, 145, "RIFERIMENTO  TRATTENUTE COMPETENZE", dim=6)
+
+    def voce(y, testo, trattenuta="", competenza=""):
+        scrivi(30, y, testo, "Courier", 7.5)
+        if trattenuta:
+            destra(470, y, trattenuta)
+        if competenza:
+            destra(540, y, competenza)
+
+    def piede():
+        scrivi(30, 700, "PROGRESSIVI", dim=6)
+        scrivi(400, 700, "TOTALEsCOMPETENZE", dim=6)
+        scrivi(400, 715, "TOTALEsTRATTENUTE", dim=6)
+        scrivi(400, 730, "ARROTONDAMENTO", dim=6)
+        scrivi(450, 745, "NETTOsDELsMESE", dim=6)
+        scrivi(30, 790, "Software paghe di prova", dim=5)
+
+    pagine = [
+        ("1/3", "CANTIERE A", [
+            ("Z00004Retribuzione edili       11,89171    56,00000ORE", "", "665,94"),
+            ("000027 Indenn.sostitutiva mensa 0,81000    56,00000ORE", "", "45,36"),
+            ("Z31060F.do Sanitario edili Operai C/Ditta  0,60000 %   (4,00)", "", ""),
+            ("Z00000Contributo IVS         711,00     9,19000%", "65,34", ""),
+            ("Z00071Contributo CIGS        711,00     0,30000%", "2,13", ""),
+        ]),
+        ("2/3", "CANTIERE B", [
+            ("Z00004Retribuzione edili       11,89171    40,00000ORE", "", "475,67"),
+            ("000027 Indenn.sostitutiva mensa 0,81000    40,00000ORE", "", "32,40"),
+            ("Z00000Contributo IVS         508,00     9,19000%", "46,69", ""),
+            ("Z00071Contributo CIGS        508,00     0,30000%", "1,52", ""),
+        ]),
+        ("3/3", "SEDE", [
+            ("F02000Imponibile IRPEF           1.025,93", "", ""),
+            ("F02010IRPEF lorda                  235,96", "", ""),
+            ("F02500Detrazioni lav.dip.          150,00", "", ""),
+            ("F03020Ritenute IRPEF", "85,96", ""),
+            ("F09110Addizionale regionale 2025", "12,00", ""),
+            ("F09130Addizionale comunale 2025", "5,00", ""),
+        ]),
+    ]
+    for n, (numero, cantiere, voci) in enumerate(pagine):
+        intestazione(numero, cantiere)
+        for i, (testo, tratt, comp) in enumerate(voci):
+            voce(165 + 14 * i, testo, tratt, comp)
+        piede()
+        if n == len(pagine) - 1:
+            # etichette dei progressivi con il valore allineato sotto (a destra di ciascuna)
+            x = 80
+            for etichetta, valore in (("Imp. INPS", "9.800,00"), ("Imp. INAIL", "9.800,00"),
+                                      ("Imp. IRPEF", "8.900,00"), ("IRPEF pagata", "700,00")):
+                scrivi(x, 700, etichetta, dim=6)
+                fine = x + c.stringWidth(etichetta, "Helvetica", 6)
+                destra(fine + 4, 710, valore)
+                x = fine + 18
+            destra(540, 700, "1.219,37")
+            destra(540, 715, "218,64")
+            destra(540, 730, "0,27")
+            scrivi(330, 745, "Permessi   27,22500 19,00000", "Courier", 7)
+            scrivi(470, 757, "8,22500 ORE", "Courier", 7)  # ore di permesso sotto l'etichetta del netto
+            destra(540, 772, "1.001,00€", dim=9)
+        c.showPage()
+    c.save()
+    return percorso

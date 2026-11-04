@@ -71,6 +71,21 @@ Il netto mensile compare anche nell'elenco dei documenti, nella stampa da riga d
 
 ![Pensione](docs/pensione.png)
 
+## Ricalcolo delle voci della busta paga
+
+Molti cedolini (es. Zucchetti) riportano per ogni voce gli elementi del calcolo. Il programma li **rifà tutti**:
+
+| Voce | Calcolo |
+|---|---|
+| `Retribuzione edili  11,89171  56,00000 ORE  665,94` | tariffa × quantità |
+| `Contributo IVS  859,00  9,19000%  78,95` | base × aliquota (tollerando la base INPS arrotondata all'euro) |
+
+Un importo ritoccato senza rifare il calcolo risulta **errore**. I contributi IVS del dipendente vengono
+**sommati su tutte le pagine** (buste con una pagina per cantiere o reparto); gli importi tra parentesi
+(quota dell'azienda) sono esclusi. Anche le intestazioni in cui lo spazio viene letto come "s"
+(«TOTALEsCOMPETENZE», «NETTOsDELsMESE») vengono riconosciute, e il nome del dipendente viene trovato
+grazie al codice fiscale anche quando non ha un'etichetta accanto.
+
 ## Cessione del quinto, deleghe e pignoramenti
 
 Su **buste paga** e **cedolini della pensione** il programma individua le trattenute per
@@ -280,6 +295,8 @@ verify_document/
   modello_redditi.py  analisi Modello Redditi PF
   pensione.py         analisi cedolino pensione e certificato ObisM
   impegni.py          cessione del quinto, deleghe, pignoramenti, quinto cedibile
+  voci.py             ricalcolo delle voci (tariffa × quantità, base × aliquota) e contributi IVS
+  anonimizza.py       testo senza dati personali da inviare per l'assistenza
   report_pdf.py       report PDF con logo e dati dello studio
   archivio.py         archivio dei documenti per cliente (copia, elenco, eliminazione nel Cestino)
   impostazioni.py     dati dello studio (impostazioni.json)

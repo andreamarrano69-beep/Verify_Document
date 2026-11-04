@@ -41,7 +41,8 @@ ETICHETTE = {
         r"\bnetto\b(?!\s+(?:progr|anno|annuo|imponibile|precedente))",
     ],
     # senza \b iniziale: l'OCR a volte incolla etichette vicine ("PRECEDENTERROTONDAMENTO ATTUALE")
-    "arrotondamento": [r"a?r?rotondamento\s+attuale", r"arr\.?\s*attuale"],
+    "arrotondamento": [r"a?r?rotondamento\s+attuale", r"arr\.?\s*attuale",
+                       r"\barrotondamento\b(?!\s+(?:precedente|prec|mese))"],
     "arrotondamento_precedente": [
         r"a?r?rotondamento\s+precedente", r"arr\.?\s*precedente", r"arrot\.?\s*mese\s+prec",
         r"a?r?rotondamento\s+preced\w*",  # parola troncata dall'OCR ("PRECEDEN")
@@ -63,9 +64,11 @@ ETICHETTE = {
     "progressivo_imponibile_fiscale": [
         r"progr(?:essivo|\.)?\s+imponibile\s+fiscale", r"imponibile\s+fiscale\s+progr(?:essivo|\.)?",
         r"imp\.?\s*fisc\.?\s*progr\.?",
+        r"\bimp\.\s*irpef\b",  # riquadro PROGRESSIVI (es. Zucchetti): "Imp. IRPEF"
     ],
     "progressivo_irpef": [
         r"progr(?:essivo|\.)?\s+(?:irpef|ritenute\s+irpef)", r"irpef\s+(?:netta\s+)?progr(?:essiva|\.)?",
+        r"irpef\s+pagata",
     ],
 }
 
@@ -162,6 +165,10 @@ def analizza(testo: str) -> Report:
     codici = trova_codici_fiscali(testo)
     cf, nota_cf = cf_corretto_ocr(codici[0] if codici else None, d["nominativo"])
     d["codice_fiscale_dipendente"] = cf
+    if not d["nominativo"] and cf:  # nome senza etichetta accanto: lo si riconosce dal codice fiscale
+        from .validators import nominativo_da_cf
+
+        d["nominativo"] = nominativo_da_cf(testo, cf)
     if nota_cf:
         r.aggiungi("Codice fiscale corretto (OCR)", Esito.ATTENZIONE, nota_cf)
     if not cf:
@@ -208,6 +215,36 @@ def analizza(testo: str) -> Report:
     # --- Importi ------------------------------------------------------------
     for chiave, etichette in ETICHETTE.items():
         d[chiave] = cerca_importo(testo, etichette)
+
+    # "Imp. IRPEF" in alcune buste è l'imponibile del mese, non il progressivo: se coincidono (e non è gennaio)
+    am = _anno_mese_periodo(periodo)
+    if d["progressivo_imponibile_fiscale"] is not None and d["progressivo_imponibile_fiscale"] == d["imponibile_fiscale"] \
+            and am and am[1] != 1:
+        d["progressivo_imponibile_fiscale"] = None
+
+    # --- Voci con il calcolo (tariffa × ore, base × aliquota): ricalcolo e contributi IVS di tutte le pagine
+    from .voci import analizza_voci
+
+    voci = analizza_voci(testo)
+    if voci.righe_ivs:
+        # la riga "Contributo IVS base aliquota% importo" è la fonte più affidabile (e va sommata se ce ne sono
+        # più d'una, ad esempio una per cantiere): l'etichetta da sola porterebbe a prendere la base
+        d["contributi_dipendente"] = voci.ivs_importo
+        if d["imponibile_previdenziale"] is None or abs(d["imponibile_previdenziale"] - voci.ivs_base) > 1:
+            d["imponibile_previdenziale"] = voci.ivs_base
+        d["contributi_obbligatori_totali"] = voci.ivs_importo + voci.altri_contributi
+    if voci.calcoli:
+        d["voci_ricalcolate"] = len(voci.calcoli)
+        if voci.errati:
+            elenco = "; ".join(f"{c.descrizione}: {c.formula} = {formatta_euro(c.atteso)}, indicato "
+                               f"{formatta_euro(c.indicato)}" for c in voci.errati[:5])
+            r.aggiungi("Calcolo delle voci", Esito.ERRORE,
+                       f"{len(voci.errati)} voci su {len(voci.calcoli)} non tornano: {elenco}")
+        else:
+            r.aggiungi("Calcolo delle voci", Esito.OK,
+                       f"{len(voci.calcoli)} voci ricalcolate (tariffa × quantità, base × aliquota): tutte corrette"
+                       + (f"; contributi IVS da {voci.righe_ivs} righe = {formatta_euro(voci.ivs_importo)}"
+                          if voci.righe_ivs > 1 else ""))
 
     comp, tratt, netto = d["totale_competenze"], d["totale_trattenute"], d["netto"]
     if netto is None and comp is not None and tratt is not None:
@@ -292,7 +329,7 @@ def analizza(testo: str) -> Report:
     from .impegni import controlla_impegni, leggi_impegni
 
     d.update(leggi_impegni(testo))
-    contr_mese, irpef_mese = d["contributi_dipendente"], d["irpef_netta"]
+    contr_mese, irpef_mese = d.get("contributi_obbligatori_totali") or d["contributi_dipendente"], d["irpef_netta"]
     if comp and contr_mese is not None and irpef_mese is not None:
         base = comp - contr_mese - irpef_mese - (d["addizionale_regionale"] or 0) - (d["addizionale_comunale"] or 0)
         descr = "lordo − contributi − IRPEF − addizionali"

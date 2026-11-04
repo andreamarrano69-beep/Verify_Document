@@ -99,12 +99,29 @@ def _da_pdf(p: Path, usa_ocr: bool) -> tuple[str, list]:
             raise ErroreEstrazione("PDF senza testo (scansione): attiva l'opzione OCR per leggerlo.")
         raise errore_ocr or ErroreEstrazione(ISTRUZIONI_TESSERACT)
 
+    ripara = _spazi_letti_come_s(testo)
+    if ripara:
+        testo = _ripara_spazi(testo)
     parole, scostamento = [], 0.0
     for altezza, parole_pagina in zip(altezze, parole_pagine):
         for w in parole_pagina:
-            parole.append(Parola(w.testo, w.x0, w.x1, w.top + scostamento, w.bottom + scostamento, w.ocr))
+            t = _ripara_spazi(w.testo) if ripara else w.testo
+            parole.append(Parola(t, w.x0, w.x1, w.top + scostamento, w.bottom + scostamento, w.ocr))
         scostamento += altezza + SPAZIO_TRA_PAGINE
     return testo, parole
+
+
+# Alcuni programmi paghe (es. intestazioni dei cedolini Zucchetti) usano un carattere in cui lo spazio
+# viene estratto come "s": "TOTALEsCOMPETENZE", "NETTOsDELsMESE", "DatasAssunzione".
+_S_AL_POSTO_DI_SPAZIO = re.compile(r"(?<=[A-Za-z])s(?=[A-Z])")
+
+
+def _spazi_letti_come_s(testo: str) -> bool:
+    return len(re.findall(r"[A-Z]{2,}s[A-Z]{2,}|[a-z]s[A-Z][a-z]", testo)) >= 5
+
+
+def _ripara_spazi(testo: str) -> str:
+    return _S_AL_POSTO_DI_SPAZIO.sub(" ", testo)
 
 
 def _ocr_pagina_pdf(p: Path, indice: int) -> tuple[str, list]:

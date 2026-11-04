@@ -130,6 +130,25 @@ def correggi_cf_letto(cf: str, nominativo: str | None = None) -> str | None:
     return next(iter(candidati)) if len(candidati) == 1 else None
 
 
+def nominativo_da_cf(testo: str, cf: str) -> str | None:
+    """Trova nel testo "COGNOME NOME" le cui lettere corrispondono alle prime 6 del codice fiscale."""
+    cf = (cf or "").upper()
+    if len(cf) != 16:
+        return None
+    for riga in testo.splitlines():
+        parole = re.findall(r"[A-ZÀ-Ü][A-ZÀ-Ü']+", riga)
+        for i in range(len(parole)):
+            for nc in (1, 2):
+                for nn in (1, 2):
+                    if i + nc + nn > len(parole):
+                        continue
+                    cognome, nome = " ".join(parole[i:i + nc]), " ".join(parole[i + nc:i + nc + nn])
+                    if codice_cognome(cognome) == cf[:3] and codice_nome(nome) == cf[3:6] \
+                            and re.search(rf"{re.escape(cognome)}\s+{re.escape(nome)}", riga):
+                        return f"{cognome} {nome}"
+    return None
+
+
 def trova_codici_fiscali(testo: str) -> list[str]:
     """Codici fiscali presenti nel testo (in ordine, senza doppioni).
 

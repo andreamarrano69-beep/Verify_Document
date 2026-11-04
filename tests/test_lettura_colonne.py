@@ -56,9 +56,10 @@ class TestBustaAColonne(unittest.TestCase):
         cls.tmp.cleanup()
 
     def _verifica(self, percorso):
-        _, r = analizza_documento(percorso, autenticita=False)
+        testo, r = analizza_documento(percorso, autenticita=False)
         for chiave, atteso in ATTESI.items():
-            self.assertEqual(r.dati.get(chiave), Decimal(atteso), chiave)
+            # in caso di errore si vede il testo letto (utile perché l'OCR cambia tra versioni di Tesseract)
+            self.assertEqual(r.dati.get(chiave), Decimal(atteso), f"{chiave}\n--- testo letto ---\n{testo}")
         self.assertEqual(r.dati["codice_fiscale_dipendente"], "RSSMRA80A01H501U")
         self.assertEqual(r.dati["data_assunzione"].isoformat(), "2019-03-01")
         self.assertEqual(r.esito_globale, Esito.OK, r.to_dict()["controlli"])

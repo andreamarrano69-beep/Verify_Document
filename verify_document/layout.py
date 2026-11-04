@@ -118,7 +118,10 @@ def _x_di(offset: int, mappa) -> float:
 
 def _letterale(etichetta: str) -> str | None:
     """Testo semplice di un'etichetta-regex ("netto\\s+del\\s+mese" -> "netto del mese"), se è semplice."""
-    t = re.sub(r"\\s[+*]?", " ", etichetta.replace(r"\b", ""))
+    t = etichetta.replace(r"\b", "")
+    t = re.sub(r"(?:\\.|[^\\()\[\]])\?", "", t)  # caratteri opzionali ("a?r?rotondamento" -> "rotondamento")
+    t = re.sub(r"\\w\*", "", t)                     # finali variabili ("preced\w*" -> "preced")
+    t = re.sub(r"\\s[+*]?", " ", t)
     t = t.replace(r"\.", ".").replace("'", "'")
     if re.search(r"[\[\](){}|?*+^$\\]", t) or len(t.strip()) < 8:
         return None

@@ -39,6 +39,7 @@ ETICHETTE = {
     "arrotondamento": [r"a?r?rotondamento\s+attuale", r"arr\.?\s*attuale"],
     "arrotondamento_precedente": [
         r"a?r?rotondamento\s+precedente", r"arr\.?\s*precedente", r"arrot\.?\s*mese\s+prec",
+        r"a?r?rotondamento\s+preced\w*",  # parola troncata dall'OCR ("PRECEDEN")
     ],
     "imponibile_previdenziale": [
         r"imponibile\s+previdenziale", r"imponibile\s+inps", r"imp\.?\s*prev\.?",

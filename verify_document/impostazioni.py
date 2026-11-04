@@ -20,6 +20,10 @@ PREDEFINITE = {
     "operatore": "",     # chi firma il report
     "logo": "",          # percorso di un'immagine PNG/JPG
     "note": "",          # testo aggiuntivo in fondo al report
+    "cartella_apertura": "",         # cartella proposta da «Apri documenti» (es. scansioni)
+    "ultima_cartella": "",           # ultima cartella usata (se cartella_apertura è vuota)
+    "archivio": "",                  # cartella dell'archivio documenti (vuota = predefinita)
+    "archivia_automaticamente": "1",  # "1" = salva una copia dei documenti aperti
 }
 
 
@@ -34,8 +38,10 @@ def carica(percorso: Path | None = None) -> dict:
 
 
 def salva(dati: dict, percorso: Path | None = None) -> Path:
+    """Salva i valori indicati; quelli non indicati restano come erano."""
     p = percorso or FILE
     p.parent.mkdir(parents=True, exist_ok=True)
-    pulite = {k: str(dati.get(k, "") or "") for k in PREDEFINITE}
+    pulite = carica(p)
+    pulite.update({k: str(v if v is not None else "") for k, v in dati.items() if k in PREDEFINITE})
     p.write_text(json.dumps(pulite, ensure_ascii=False, indent=2), encoding="utf-8")
     return p

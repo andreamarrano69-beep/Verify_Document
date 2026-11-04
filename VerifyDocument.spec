@@ -23,7 +23,7 @@ hiddenimports = collect_submodules("verify_document")
 
 # librerie con file di dati o DLL da includere (pdfium.dll, font di reportlab, cmap di pdfminer)
 for pacchetto in ("pypdfium2", "pypdfium2_raw", "pdfplumber", "pdfminer", "reportlab", "tkinterdnd2",
-                  "pytesseract"):
+                  "pytesseract", "send2trash"):
     try:
         d, b, h = collect_all(pacchetto)
     except Exception:

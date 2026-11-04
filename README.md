@@ -133,6 +133,33 @@ python -m verify_document esempi/confronto/*.txt --confronta
 python -m verify_document esempi/pensionato/*.txt --confronta
 ```
 
+## Archivio documenti
+
+Quando apri un documento da qualsiasi cartella (es. la cartella delle **scansioni**), il programma ne salva
+una **copia nell'archivio**, divisa per cliente e con un nome comprensibile:
+
+```
+documenti/
+  RSSMRA80A01H501U - ROSSI MARIO/
+    Busta paga - Ottobre 2026 - [Untitled]_2023012715060859.pdf
+    CU - Anno 2025 - scansione_12.pdf
+  BNCGPP55A10H501F - BIANCHI GIUSEPPE/
+    Cedolino pensione - Marzo 2025 - ....pdf
+```
+
+- l'originale non viene mai toccato; lo stesso file non viene copiato due volte
+- **🗂 Archivio**: elenco per cliente, ordinabile per **periodo** del documento, data o nome (clic sull'intestazione),
+  ricerca, doppio clic per riaprire, **Elimina** (anche un cliente intero) → i file vanno nel **Cestino**
+- la copia si può disattivare con «Salva copia nell'archivio»; nell'elenco principale tasto destro
+  → «Elimina la copia dall'archivio», tasto Canc → rimuovi dall'elenco
+- cartella dell'archivio: **⚙ Impostazioni** (predefinita: `documenti` nel progetto, oppure
+  `Documenti\Verify Document\documenti` per il .exe)
+
+**Ordine per data**: nell'elenco dei documenti la colonna **Data** è il periodo del documento (mese della busta
+paga, anno di CU e Modello Redditi); clic sull'intestazione di una colonna per ordinare, di nuovo per invertire.
+In **⚙ Impostazioni** si può indicare la **cartella da cui aprire i documenti** (es. le scansioni).
+Nella finestra «Scegli i documenti» di Windows: vista **Dettagli** → clic su **Ultima modifica**.
+
 ## Report PDF
 
 Il pulsante **📄 Report PDF** (o `--pdf report.pdf` da riga di comando) crea un PDF da consegnare
@@ -232,6 +259,7 @@ verify_document/
   pensione.py         analisi cedolino pensione e certificato ObisM
   impegni.py          cessione del quinto, deleghe, pignoramenti, quinto cedibile
   report_pdf.py       report PDF con logo e dati dello studio
+  archivio.py         archivio dei documenti per cliente (copia, elenco, eliminazione nel Cestino)
   impostazioni.py     dati dello studio (impostazioni.json)
   cu.py               analisi Certificazione Unica (scaglioni IRPEF per anno in SCAGLIONI_IRPEF)
   anagrafica.py       analisi documenti d'identità

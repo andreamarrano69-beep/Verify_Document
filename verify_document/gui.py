@@ -89,6 +89,8 @@ class Risultato:
     report: Report | None = None
     testo: str = ""
     errore: str | None = None
+    archiviato: Path | None = None   # copia nell'archivio documenti
+    nuovo_in_archivio: bool = False
 
     @property
     def esito(self) -> Esito:
@@ -155,6 +157,7 @@ class App:
         menu.add_command(label="Dati (.json)…", command=lambda: self.esporta("json"))
         menu_esporta["menu"] = menu
         menu_esporta.pack(side="left", padx=6)
+        ttk.Button(barra, text="🗂  Archivio", command=self.apri_archivio).pack(side="left")
         ttk.Button(barra, text="⏻  Esci", style="Esci.TButton", command=self.esci).pack(side="right")
         ttk.Separator(barra, orient="vertical").pack(side="right", fill="y", padx=8)
         ttk.Button(barra, text="⚙  Impostazioni", command=self.apri_impostazioni).pack(side="right")
@@ -169,6 +172,12 @@ class App:
         self.var_ocr = tk.BooleanVar(value=True)
         ttk.Checkbutton(opzioni, text="Usa OCR per scansioni/foto", variable=self.var_ocr).pack(
             side="left", padx=10)
+        from . import impostazioni
+
+        self.var_archivia = tk.BooleanVar(value=impostazioni.carica()["archivia_automaticamente"] != "0")
+        ttk.Checkbutton(opzioni, text="Salva copia nell'archivio", variable=self.var_archivia,
+                        command=lambda: impostazioni.salva(
+                            {"archivia_automaticamente": "1" if self.var_archivia.get() else "0"})).pack(side="left")
         ttk.Button(opzioni, text="↻  Rianalizza", command=self.rianalizza).pack(side="left", padx=(10, 0))
         ttk.Button(opzioni, text="🗑  Svuota", command=self.svuota).pack(side="left", padx=6)
 
@@ -178,13 +187,16 @@ class App:
         # Colonna sinistra: elenco documenti
         sx = ttk.Frame(corpo)
         ttk.Label(sx, text="Documenti", style="Titolo.TLabel").pack(anchor="w", pady=(0, 4))
-        self.lista = ttk.Treeview(sx, columns=("esito", "tipo", "mensile"), show="tree headings",
+        self.lista = ttk.Treeview(sx, columns=("data", "esito", "tipo", "mensile"), show="tree headings",
                                   selectmode="browse")
-        self.lista.heading("#0", text="File")
-        self.lista.heading("esito", text="Esito")
-        self.lista.heading("tipo", text="Tipo")
-        self.lista.heading("mensile", text="Netto mensile")
-        self.lista.column("#0", width=190)
+        self.titoli_lista = {"#0": "File", "data": "Data", "esito": "Esito", "tipo": "Tipo",
+                             "mensile": "Netto mensile"}
+        for col, titolo in self.titoli_lista.items():
+            self.lista.heading(col, text=titolo, command=lambda c=col: self.ordina_lista(c, cambia=True))
+        self.ordinamento = ("data", True)  # colonna, decrescente (più recenti in alto)
+        self.chiavi_data: dict[str, object] = {}
+        self.lista.column("#0", width=170)
+        self.lista.column("data", width=105)
         self.lista.column("esito", width=100, anchor="center")
         self.lista.column("tipo", width=120)
         self.lista.column("mensile", width=105, anchor="e")
@@ -193,6 +205,22 @@ class App:
         self.lista.tag_configure("attesa", foreground="#666")
         self.lista.pack(fill="both", expand=True)
         self.lista.bind("<<TreeviewSelect>>", lambda _e: self.mostra_selezionato())
+        self.lista.bind("<Delete>", lambda _e: self.rimuovi_selezionato())
+        self.menu_lista = tk.Menu(self.lista, tearoff=0)
+        self.menu_lista.add_command(label="Rimuovi dall'elenco", command=self.rimuovi_selezionato)
+        self.menu_lista.add_command(label="Elimina la copia dall'archivio…",
+                                    command=lambda: self.rimuovi_selezionato(elimina_copia=True))
+        self.menu_lista.add_separator()
+        self.menu_lista.add_command(label="Apri il file", command=lambda: self._apri_selezionato(cartella=False))
+        self.menu_lista.add_command(label="Apri la cartella del file", command=lambda: self._apri_selezionato(cartella=True))
+
+        def menu_contestuale(evento):
+            riga = self.lista.identify_row(evento.y)
+            if riga:
+                self.lista.selection_set(riga)
+                self.menu_lista.tk_popup(evento.x_root, evento.y_root)
+
+        self.lista.bind("<Button-3>", menu_contestuale)
         suggerimento = ("Trascina qui i file oppure usa «Apri documenti…»" if self.dnd
                         else "Usa «Apri documenti…» per aggiungere file")
         suggerimento += "  ·  F11 schermo intero  ·  Ctrl+Q esci"
@@ -283,9 +311,15 @@ class App:
 
     # ---------------------------------------------------------------- azioni
     def apri_file(self) -> None:
-        percorsi = filedialog.askopenfilenames(title="Scegli i documenti da verificare",
-                                               filetypes=TIPI_FILE)
+        from . import impostazioni
+
+        imp = impostazioni.carica()
+        iniziale = next((c for c in (imp["cartella_apertura"], imp["ultima_cartella"]) if c and Path(c).is_dir()), None)
+        percorsi = filedialog.askopenfilenames(title="Scegli i documenti da verificare (vista Dettagli → "
+                                               "clic su «Ultima modifica» per ordinare per data)",
+                                               filetypes=TIPI_FILE, initialdir=iniziale)
         if percorsi:
+            impostazioni.salva({"ultima_cartella": str(Path(percorsi[0]).parent)})
             self.aggiungi(percorsi)
 
     def aggiungi(self, percorsi) -> None:
@@ -295,17 +329,21 @@ class App:
                 continue
             chiave = str(p.resolve())
             if self.lista.exists(chiave):
-                self.lista.item(chiave, values=("in corso…", "", ""), tags=("attesa",))
+                self.lista.item(chiave, values=("", "in corso…", "", ""), tags=("attesa",))
             else:
-                self.lista.insert("", "end", iid=chiave, text=p.name, values=("in corso…", "", ""),
+                self.lista.insert("", "end", iid=chiave, text=p.name, values=("", "in corso…", "", ""),
                                   tags=("attesa",))
             self._avvia_analisi(p, chiave)
         if not self.lista.selection() and self.lista.get_children():
             self.lista.selection_set(self.lista.get_children()[-1])
 
     def _avvia_analisi(self, percorso: Path, chiave: str) -> None:
+        from . import impostazioni
+        from .archivio import cartella_archivio
+
         tipo = TIPI[self.var_tipo.get()]
         ocr = self.var_ocr.get()
+        archivio = cartella_archivio(impostazioni.carica()) if self.var_archivia.get() else None
         self.in_corso += 1
         self.progress.start(12)
         self.var_stato.set(f"Analisi in corso: {percorso.name}…")
@@ -318,6 +356,13 @@ class App:
                 ris.errore = str(e)
             except Exception as e:  # errore imprevisto: non bloccare l'interfaccia
                 ris.errore = f"Errore imprevisto: {e!r}"
+            if archivio is not None and ris.report is not None:
+                from .archivio import archivia
+
+                try:
+                    ris.archiviato, ris.nuovo_in_archivio = archivia(percorso, ris.report, archivio)
+                except OSError:
+                    pass  # archivio non scrivibile: l'analisi resta valida
             self.coda.put((chiave, ris))
 
         threading.Thread(target=lavoro, daemon=True).start()
@@ -326,6 +371,8 @@ class App:
         from .estrazione import trova_tesseract
 
         percorso, lingua = trova_tesseract()
+        if self.risultati or self.in_corso:  # analisi già avviate: non coprire il loro messaggio
+            return
         if percorso:
             self.var_stato.set(f"Pronto. OCR attivo (Tesseract, lingua {lingua or 'predefinita'}) per scansioni "
                                "e foto. Tutti i documenti vengono elaborati in locale.")
@@ -334,6 +381,7 @@ class App:
                                "(installa Tesseract; diagnosi: python -m verify_document.diagnosi).")
 
     def _controlla_coda(self) -> None:
+        aggiornati = False
         try:
             while True:
                 chiave, ris = self.coda.get_nowait()
@@ -350,18 +398,39 @@ class App:
                     tipo = ris.report.tipo_documento if ris.report else "—"
                     sx = sintesi(ris.report) if ris.report else None
                     mensile = formatta_euro(sx.mensile_netto) if sx and sx.mensile_netto is not None else ""
-                    self.lista.item(chiave, values=(testo_esito, tipo, mensile), tags=(esito.value,))
+                    from .archivio import data_documento, descrizione_periodo
+
+                    data_doc = data_documento(ris.report)
+                    if data_doc is None:  # documenti senza periodo: data del file
+                        from datetime import datetime
+
+                        data_doc = datetime.fromtimestamp(ris.percorso.stat().st_mtime).date()
+                        testo_data = f"{data_doc:%d/%m/%Y}"
+                    else:
+                        testo_data = descrizione_periodo(ris.report)
+                    self.chiavi_data[chiave] = data_doc
+                    self.lista.item(chiave, values=(testo_data, testo_esito, tipo, mensile), tags=(esito.value,))
+                    aggiornati = True
                 if chiave in self.lista.selection():
                     self.mostra_selezionato()
         except queue.Empty:
             pass
-        if self.in_corso <= 0:
+        if aggiornati:
+            self.ordina_lista(*self.ordinamento)
+        if self.in_corso <= 0 and aggiornati:
             self.in_corso = 0
             self.progress.stop()
             if self.risultati:
                 n = len(self.risultati)
                 errori = sum(1 for r in self.risultati.values() if r.esito == Esito.ERRORE)
-                self.var_stato.set(f"{n} documenti analizzati — {errori} con errori.")
+                nuovi = sum(1 for r in self.risultati.values() if r.nuovo_in_archivio)
+                stato = f"{n} documenti analizzati — {errori} con errori."
+                if nuovi:
+                    stato += f" {nuovi} salvati nell'archivio documenti."
+                self.var_stato.set(stato)
+        elif self.in_corso <= 0:
+            self.in_corso = 0
+            self.progress.stop()
         self.root.after(150, self._controlla_coda)
 
     def mostra_selezionato(self) -> None:
@@ -452,7 +521,7 @@ class App:
     def rianalizza(self) -> None:
         """Rianalizza tutti i documenti (es. dopo aver cambiato il tipo)."""
         for chiave in self.lista.get_children():
-            self.lista.item(chiave, values=("in corso…", "", ""), tags=("attesa",))
+            self.lista.item(chiave, values=("", "in corso…", "", ""), tags=("attesa",))
             self.risultati.pop(chiave, None)
             self._avvia_analisi(Path(chiave), chiave)
 
@@ -495,12 +564,83 @@ class App:
             return
         self.root.destroy()
 
+    # --- ordinamento, rimozione, archivio ------------------------------------------
+    def ordina_lista(self, colonna: str, decrescente: bool | None = None, cambia: bool = False) -> None:
+        if cambia:  # clic sull'intestazione: stessa colonna inverte, nuova colonna parte decrescente per la data
+            col_att, dec_att = self.ordinamento
+            decrescente = (not dec_att) if col_att == colonna else (colonna in ("data", "mensile"))
+        elif decrescente is None:
+            decrescente = self.ordinamento[1]
+        self.ordinamento = (colonna, decrescente)
+
+        def chiave(iid):
+            if colonna == "#0":
+                return self.lista.item(iid, "text").lower()
+            if colonna == "data":
+                d = self.chiavi_data.get(iid)
+                return d.toordinal() if d is not None else (-1 if decrescente else 10**9)
+            if colonna == "mensile":
+                ris = self.risultati.get(iid)
+                sx = sintesi(ris.report) if ris and ris.report else None
+                return float(sx.mensile_netto) if sx and sx.mensile_netto is not None else -1.0
+            return str(self.lista.set(iid, colonna)).lower()
+
+        for i, iid in enumerate(sorted(self.lista.get_children(), key=chiave, reverse=decrescente)):
+            self.lista.move(iid, "", i)
+        for col, titolo in self.titoli_lista.items():
+            freccia = (" ▼" if decrescente else " ▲") if col == colonna else ""
+            self.lista.heading(col, text=titolo + freccia)
+
+    def rimuovi_selezionato(self, elimina_copia: bool = False) -> None:
+        sel = self.lista.selection()
+        if not sel:
+            return
+        chiave = sel[0]
+        ris = self.risultati.get(chiave)
+        if elimina_copia:
+            from . import impostazioni
+            from .archivio import cartella_archivio, e_in_archivio, elimina
+
+            archivio = cartella_archivio(impostazioni.carica())
+            copia = ris.archiviato if ris and ris.archiviato else (Path(chiave) if e_in_archivio(Path(chiave), archivio) else None)
+            if copia is None or not copia.exists():
+                messagebox.showinfo("Archivio", "Questo documento non ha una copia nell'archivio.", parent=self.root)
+                return
+            if not messagebox.askyesno("Elimina dall'archivio",
+                                       f"Eliminare la copia nell'archivio?\n{copia.name}\n\n"
+                                       "Il file originale non viene toccato.", parent=self.root):
+                return
+            try:
+                dove = elimina(copia, archivio)
+            except (OSError, ValueError) as e:
+                messagebox.showerror("Archivio", str(e), parent=self.root)
+                return
+            self.var_stato.set(f"Copia eliminata dall'archivio ({dove}): {copia.name}")
+        self.lista.delete(chiave)
+        self.risultati.pop(chiave, None)
+        self.chiavi_data.pop(chiave, None)
+        figli = self.lista.get_children()
+        if figli:
+            self.lista.selection_set(figli[0])
+        else:
+            self.mostra_selezionato()
+
+    def _apri_selezionato(self, cartella: bool) -> None:
+        sel = self.lista.selection()
+        if sel:
+            p = Path(sel[0])
+            apri_con_programma_predefinito(str(p.parent if cartella else p))
+
+    def apri_archivio(self) -> None:
+        FinestraArchivio(self)
+
     def svuota(self) -> None:
         if self.in_corso:
             messagebox.showwarning("Attendere", "Analisi ancora in corso.", parent=self.root)
             return
         self.lista.delete(*self.lista.get_children())
         self.risultati.clear()
+        self.chiavi_data.clear()
         self.lbl_titolo.config(text="Nessun documento selezionato")
         self.lbl_esito.config(text="", bg=self.root.cget("bg"))
         self.mostra_selezionato()
@@ -640,6 +780,21 @@ class FinestraImpostazioni:
         self.note = tk.Text(corpo, width=52, height=4, font=("Segoe UI", 10), wrap="word")
         self.note.insert("1.0", dati.get("note", ""))
         self.note.grid(row=riga + 1, column=1, columnspan=2, sticky="we", pady=3)
+        from .archivio import cartella_archivio
+
+        for i, (chiave, etichetta, suggerimento) in enumerate([
+                ("cartella_apertura", "Cartella da cui aprire i documenti",
+                 "es. la cartella delle scansioni; vuota = ultima cartella usata"),
+                ("archivio", "Cartella archivio documenti",
+                 f"vuota = {cartella_archivio({})}")]):
+            r = riga + 2 + i * 2
+            ttk.Label(corpo, text=etichetta).grid(row=r, column=0, sticky="w", pady=(6, 0))
+            self.var[chiave] = tk.StringVar(value=dati.get(chiave, ""))
+            ttk.Entry(corpo, textvariable=self.var[chiave], width=40).grid(row=r, column=1, sticky="we", pady=(6, 0))
+            ttk.Button(corpo, text="Scegli…", command=lambda c=chiave: self._scegli_cartella(c)).grid(
+                row=r, column=2, padx=(6, 0), pady=(6, 0))
+            ttk.Label(corpo, text=suggerimento, foreground="#666").grid(row=r + 1, column=1, columnspan=2, sticky="w")
+        riga += 4
         ttk.Label(corpo, text=f"Salvate in: {impostazioni.FILE}", foreground="#666").grid(
             row=riga + 2, column=0, columnspan=3, sticky="w", pady=(8, 0))
         pulsanti = ttk.Frame(corpo)
@@ -654,14 +809,200 @@ class FinestraImpostazioni:
         if percorso:
             self.var["logo"].set(percorso)
 
+    def _scegli_cartella(self, chiave: str) -> None:
+        cartella = filedialog.askdirectory(parent=self.win, title="Scegli la cartella",
+                                           initialdir=self.var[chiave].get() or None)
+        if cartella:
+            self.var[chiave].set(cartella)
+
     def _salva(self) -> None:
         dati = {k: v.get().strip() for k, v in self.var.items()}
+        for chiave in ("cartella_apertura", "archivio"):
+            if dati[chiave] and not Path(dati[chiave]).is_dir():
+                try:
+                    Path(dati[chiave]).mkdir(parents=True, exist_ok=True)
+                except OSError:
+                    messagebox.showwarning("Cartella", f"Cartella non valida:\n{dati[chiave]}", parent=self.win)
+                    return
         dati["note"] = self.note.get("1.0", "end").strip()
         if dati["logo"] and not Path(dati["logo"]).is_file():
             messagebox.showwarning("Logo", "Il file del logo non esiste.", parent=self.win)
             return
         self.imp.salva(dati)
         self.win.destroy()
+
+
+from datetime import date  # noqa: E402  (usato dalla finestra archivio)
+
+
+class FinestraArchivio:
+    """Documenti salvati nell'archivio, divisi per cliente: riapri, ordina per data, elimina."""
+
+    def __init__(self, app: "App"):
+        from . import impostazioni
+        from .archivio import cartella_archivio
+
+        self.app = app
+        self.archivio = cartella_archivio(impostazioni.carica())
+        self.win = tk.Toplevel(app.root)
+        self.win.title("Archivio documenti")
+        self.win.geometry("1000x620")
+        self.win.transient(app.root)
+
+        alto = ttk.Frame(self.win, padding=(10, 8))
+        alto.pack(fill="x")
+        ttk.Label(alto, text="Archivio documenti", style="Titolo.TLabel").pack(side="left")
+        ttk.Label(alto, text=f"   {self.archivio}", foreground="#666").pack(side="left")
+
+        barra = ttk.Frame(self.win, padding=(10, 0, 10, 6))
+        barra.pack(fill="x")
+        ttk.Button(barra, text="📂  Apri nel programma", style="Accent.TButton",
+                   command=self.apri_nel_programma).pack(side="left")
+        ttk.Button(barra, text="🗑  Elimina…", command=self.elimina).pack(side="left", padx=6)
+        ttk.Button(barra, text="📁  Apri cartella", command=self.apri_cartella).pack(side="left")
+        ttk.Button(barra, text="↻  Aggiorna", command=self.aggiorna).pack(side="left", padx=6)
+        ttk.Label(barra, text="Cerca:").pack(side="left", padx=(16, 4))
+        self.var_cerca = tk.StringVar()
+        self.var_cerca.trace_add("write", lambda *_: self.aggiorna())
+        ttk.Entry(barra, textvariable=self.var_cerca, width=28).pack(side="left")
+        ttk.Button(barra, text="Chiudi", command=self.win.destroy).pack(side="right")
+
+        corpo = ttk.Frame(self.win, padding=(10, 0, 10, 6))
+        corpo.pack(fill="both", expand=True)
+        self.albero = ttk.Treeview(corpo, columns=("periodo", "data", "dimensione"), show="tree headings",
+                                   selectmode="extended")
+        self.titoli = {"#0": "Cliente / documento", "periodo": "Periodo", "data": "Data del file",
+                       "dimensione": "Dimensione"}
+        for col, titolo in self.titoli.items():
+            self.albero.heading(col, text=titolo, command=lambda c=col: self.ordina(c, cambia=True))
+        self.albero.column("#0", width=500)
+        self.albero.column("periodo", width=130)
+        self.albero.column("data", width=150, anchor="center")
+        self.albero.column("dimensione", width=100, anchor="e")
+        self.albero.tag_configure("cliente", font=("Segoe UI", 10, "bold"))
+        App._con_scrollbar(corpo, self.albero)
+        self.albero.bind("<Double-1>", lambda _e: self.apri_nel_programma())
+        self.albero.bind("<Delete>", lambda _e: self.elimina())
+        self.stato = tk.StringVar()
+        ttk.Label(self.win, textvariable=self.stato, padding=(10, 0, 10, 8)).pack(fill="x")
+        self.ordinamento = ("periodo", True)
+        self.voci: dict[str, object] = {}
+        self.aggiorna()
+
+    def aggiorna(self) -> None:
+        from .archivio import elenco
+
+        aperti = {iid for iid in self.albero.get_children() if self.albero.item(iid, "open")}
+        self.albero.delete(*self.albero.get_children())
+        self.voci.clear()
+        filtro = self.var_cerca.get().strip().lower()
+        voci = [v for v in elenco(self.archivio)
+                if not filtro or filtro in v.percorso.name.lower() or filtro in v.cliente.lower()]
+        clienti: dict[str, list] = {}
+        for v in voci:
+            clienti.setdefault(v.cliente or "(senza cartella cliente)", []).append(v)
+        for cliente, file in clienti.items():
+            ultimo = max(f.archiviato_il for f in file)
+            periodi = [f.periodo for f in file if f.periodo]
+            recente = max(periodi) if periodi else date.min
+            iid_cliente = f"cliente::{cliente}"
+            self.albero.insert("", "end", iid=iid_cliente, text=f"{cliente}   ({len(file)})",
+                               values=("", f"{ultimo:%d/%m/%Y %H:%M}", ""), tags=("cliente",),
+                               open=bool(filtro) or iid_cliente in aperti or len(clienti) <= 3)
+            self.voci[iid_cliente] = (self.archivio / cliente if cliente != "(senza cartella cliente)" else None,
+                                      ultimo, sum(f.dimensione for f in file), cliente.lower(), recente)
+            for f in file:
+                iid = str(f.percorso)
+                kb = max(1, round(f.dimensione / 1024))
+                self.albero.insert(iid_cliente, "end", iid=iid, text=f.percorso.name,
+                                   values=(f.testo_periodo, f"{f.archiviato_il:%d/%m/%Y %H:%M}",
+                                           f"{kb:,} KB".replace(",", ".")))
+                self.voci[iid] = (f.percorso, f.archiviato_il, f.dimensione, f.percorso.name.lower(),
+                                  f.periodo or date.min)
+        self.ordina(*self.ordinamento)
+        totale = len(voci)
+        self.stato.set(f"{totale} documenti di {len(clienti)} clienti" + (" (filtrati)" if filtro else "")
+                       + "  ·  doppio clic per aprire  ·  Canc per eliminare (nel Cestino)")
+
+    def ordina(self, colonna: str, decrescente: bool | None = None, cambia: bool = False) -> None:
+        if cambia:
+            col_att, dec_att = self.ordinamento
+            decrescente = (not dec_att) if col_att == colonna else colonna != "#0"
+        elif decrescente is None:
+            decrescente = self.ordinamento[1]
+        self.ordinamento = (colonna, decrescente)
+        indice = {"#0": 3, "data": 1, "dimensione": 2, "periodo": 4}[colonna]
+        for genitore in ("", *self.albero.get_children()):
+            figli = sorted(self.albero.get_children(genitore), key=lambda i: self.voci[i][indice], reverse=decrescente)
+            for n, iid in enumerate(figli):
+                self.albero.move(iid, genitore, n)
+        for col, titolo in self.titoli.items():
+            self.albero.heading(col, text=titolo + ((" ▼" if decrescente else " ▲") if col == colonna else ""))
+
+    def _selezionati(self) -> list[Path]:
+        file = []
+        for iid in self.albero.selection():
+            if iid.startswith("cliente::"):
+                file += [Path(c) for c in self.albero.get_children(iid)]
+            else:
+                file.append(Path(iid))
+        return list(dict.fromkeys(file))
+
+    def apri_nel_programma(self) -> None:
+        file = self._selezionati()
+        if file:
+            self.app.aggiungi([str(f) for f in file])
+            self.app.root.lift()
+
+    def apri_cartella(self) -> None:
+        sel = self.albero.selection()
+        cartella = self.archivio
+        if sel:
+            p = self.voci[sel[0]][0]
+            cartella = p if p and p.is_dir() else (p.parent if p else self.archivio)
+        cartella.mkdir(parents=True, exist_ok=True)
+        apri_con_programma_predefinito(str(cartella))
+
+    def elimina(self) -> None:
+        from .archivio import elimina
+
+        sel = self.albero.selection()
+        if not sel:
+            messagebox.showinfo("Elimina", "Seleziona uno o più documenti (o un cliente).", parent=self.win)
+            return
+        bersagli = []
+        for iid in sel:
+            p = self.voci[iid][0]
+            if iid.startswith("cliente::"):
+                if p is not None:
+                    bersagli.append(p)
+                else:
+                    bersagli += [Path(c) for c in self.albero.get_children(iid)]
+            elif not any(str(Path(iid)).startswith(str(b)) for b in bersagli if b.is_dir()):
+                bersagli.append(Path(iid))
+        n_file = len(self._selezionati())
+        clienti = [b.name for b in bersagli if b.is_dir()]
+        testo = f"Eliminare {n_file} documenti dall'archivio?"
+        if clienti:
+            testo += "\n\nCartelle cliente intere: " + ", ".join(clienti)
+        testo += "\n\nI file vanno nel Cestino di Windows (recuperabili). Gli originali non vengono toccati."
+        if not messagebox.askyesno("Elimina dall'archivio", testo, icon="warning", parent=self.win):
+            return
+        dove, errori = "", []
+        for b in bersagli:
+            try:
+                dove = elimina(b, self.archivio)
+            except (OSError, ValueError) as e:
+                errori.append(f"{b.name}: {e}")
+        # i documenti eliminati non sono più nell'archivio: lo si indica nell'elenco principale
+        for ris in self.app.risultati.values():
+            if ris.archiviato and not ris.archiviato.exists():
+                ris.archiviato = None
+        self.aggiorna()
+        if errori:
+            messagebox.showerror("Elimina", "\n".join(errori), parent=self.win)
+        else:
+            self.stato.set(f"Eliminati {n_file} documenti ({dove}).")
 
 
 class FinestraConfronto:

@@ -35,7 +35,10 @@ ETICHETTE = {
     "totale_trattenute": [r"totale\s+trattenute", r"tot\.?\s*trattenute"],
     "netto": [
         r"netto\s+in\s+busta", r"netto\s+del\s+mese", r"netto\s+a\s+pagare",
-        r"netto\s+busta", r"netto\s+da\s+pagare", r"\bnetto\b",
+        r"netto\s+busta", r"netto\s+da\s+pagare", r"netto\s+da\s+corrispondere", r"netto\s+corrisposto",
+        r"netto\s+pagato", r"netto\s+erogato", r"netto\s+spettante", r"netto\s+(?:della\s+)?retribuzione",
+        r"netto\s+mese", r"netto\s+(?:a\s+)?liquidare", r"totale\s+netto", r"importo\s+netto",
+        r"\bnetto\b(?!\s+(?:progr|anno|annuo|imponibile|precedente))",
     ],
     # senza \b iniziale: l'OCR a volte incolla etichette vicine ("PRECEDENTERROTONDAMENTO ATTUALE")
     "arrotondamento": [r"a?r?rotondamento\s+attuale", r"arr\.?\s*attuale"],
@@ -207,7 +210,15 @@ def analizza(testo: str) -> Report:
         d[chiave] = cerca_importo(testo, etichette)
 
     comp, tratt, netto = d["totale_competenze"], d["totale_trattenute"], d["netto"]
-    if None in (comp, tratt, netto):
+    if netto is None and comp is not None and tratt is not None:
+        # netto non letto (dicitura non riconosciuta o scansione): lo si calcola, segnalandolo
+        arr = (d["arrotondamento"] or 0) - (d["arrotondamento_precedente"] or 0)
+        d["netto_calcolato"] = comp - tratt + arr
+        r.aggiungi("Quadratura netto", Esito.ATTENZIONE,
+                   f"Netto non trovato nel documento: calcolato {formatta_euro(comp)} − {formatta_euro(tratt)}"
+                   + (f" ± arrotondamenti {formatta_euro(arr)}" if arr else "")
+                   + f" = {formatta_euro(d['netto_calcolato'])}. Verificare sul documento (dicitura del netto non riconosciuta)")
+    elif None in (comp, tratt, netto):
         mancanti = [k for k in ("totale_competenze", "totale_trattenute", "netto") if d[k] is None]
         r.aggiungi("Quadratura netto", Esito.ATTENZIONE,
                    "Impossibile verificare, non trovati: " + ", ".join(mancanti))
@@ -232,6 +243,16 @@ def analizza(testo: str) -> Report:
             r.aggiungi("Netto positivo", Esito.ERRORE, "Il netto in busta è nullo o negativo")
 
     imp_prev, contr = d["imponibile_previdenziale"], d["contributi_dipendente"]
+    if imp_prev and contr and not (Decimal("3") <= contr / imp_prev * 100 <= Decimal("15")):
+        # un'aliquota impossibile vuol dire che è stato letto un altro numero (es. contributi azienda + dipendente):
+        # non lo si usa negli altri calcoli, per non propagare l'errore
+        aliquota = (contr / imp_prev * 100).quantize(Decimal("0.01"))
+        r.aggiungi("Contributi INPS", Esito.ATTENZIONE,
+                   f"Letto {formatta_euro(contr)} su imponibile {formatta_euro(imp_prev)} = {str(aliquota).replace('.', ',')}%: "
+                   "aliquota impossibile per il dipendente (di solito ~9-10%), probabilmente è stato letto un altro "
+                   "importo (es. totale contributi con la quota dell'azienda). Valore non usato negli altri calcoli")
+        d["contributi_letti_scartati"] = contr
+        d["contributi_dipendente"] = contr = None
     if imp_prev and contr:
         aliquota = (contr / imp_prev * 100).quantize(Decimal("0.01"))
         d["aliquota_contributiva_%"] = aliquota
@@ -275,9 +296,10 @@ def analizza(testo: str) -> Report:
     if comp and contr_mese is not None and irpef_mese is not None:
         base = comp - contr_mese - irpef_mese - (d["addizionale_regionale"] or 0) - (d["addizionale_comunale"] or 0)
         descr = "lordo − contributi − IRPEF − addizionali"
-    elif netto:
-        base = netto + sum((d[k] or 0) for k in ("cessione_quinto", "delegazione_pagamento", "pignoramento"))
-        descr = "netto in busta + rate già trattenute (stima)"
+    elif netto or d.get("netto_calcolato"):
+        base = (netto or d["netto_calcolato"]) + sum((d[k] or 0) for k in ("cessione_quinto", "delegazione_pagamento",
+                                                                           "pignoramento"))
+        descr = "netto in busta + rate già trattenute (stima)" if netto else "netto calcolato + rate già trattenute (stima)"
     else:
         base, descr = None, ""
     if not d.get("mensilita_aggiuntiva"):

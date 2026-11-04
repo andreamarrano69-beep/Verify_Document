@@ -132,8 +132,10 @@ def sintesi(r: Report) -> Sintesi | None:
         return Sintesi("Tipo di pensione", d.get("tipo_pensione"), d.get("reddito_mensile_lordo"),
                        d.get("reddito_mensile_netto"), "rata mensile, pagata per 13 mensilità")
     if t == "Busta paga":
-        return Sintesi("Tipo di reddito", "Lavoro dipendente", d.get("totale_competenze"), d.get("netto"),
-                       f"busta paga di {d.get('periodo') or 'periodo non indicato'}")
+        netto, nota = d.get("netto"), f"busta paga di {d.get('periodo') or 'periodo non indicato'}"
+        if netto is None and d.get("netto_calcolato") is not None:
+            netto, nota = d["netto_calcolato"], nota + " · netto CALCOLATO (non letto nel documento)"
+        return Sintesi("Tipo di reddito", "Lavoro dipendente", d.get("totale_competenze"), netto, nota)
     return None
 
 

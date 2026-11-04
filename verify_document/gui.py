@@ -290,10 +290,19 @@ class App:
         self._con_scrollbar(f2, self.tab_dati)
         self.schede.add(f2, text="  Dati estratti  ")
 
-        # Scheda testo letto
+        # Scheda testo letto (con copia anonimizzata, da inviare per l'assistenza senza dati personali)
         f3 = ttk.Frame(self.schede)
-        self.txt = tk.Text(f3, wrap="none", font=("Consolas", 10))
-        self._con_scrollbar(f3, self.txt, orizzontale=True)
+        barra_testo = ttk.Frame(f3, padding=(0, 4))
+        barra_testo.grid(row=0, column=0, columnspan=2, sticky="ew")
+        ttk.Button(barra_testo, text="📋  Copia testo anonimizzato", command=self.copia_testo_anonimizzato).pack(side="left")
+        ttk.Label(barra_testo, text="  senza codice fiscale, nome e IBAN: da incollare quando chiedi assistenza",
+                  foreground="#666").pack(side="left")
+        interno = ttk.Frame(f3)
+        interno.grid(row=1, column=0, columnspan=2, sticky="nsew")
+        f3.rowconfigure(1, weight=1)
+        f3.columnconfigure(0, weight=1)
+        self.txt = tk.Text(interno, wrap="none", font=("Consolas", 10))
+        self._con_scrollbar(interno, self.txt, orizzontale=True)
         self.schede.add(f3, text="  Testo letto  ")
         corpo.add(dx, weight=3)
 
@@ -609,6 +618,19 @@ class App:
             freccia = (" ▼" if decrescente else " ▲") if col == colonna else ""
             self.lista.heading(col, text=titolo + freccia)
 
+    def copia_testo_anonimizzato(self) -> None:
+        from .anonimizza import anonimizza
+
+        sel = self.lista.selection()
+        ris = self.risultati.get(sel[0]) if sel else None
+        if not ris or not ris.testo:
+            messagebox.showinfo("Copia testo", "Seleziona un documento analizzato.", parent=self.root)
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(anonimizza(ris.testo, ris.report))
+        self.var_stato.set("Testo anonimizzato copiato: incollalo dove serve (controlla comunque che non restino "
+                           "dati personali, ad esempio l'indirizzo).")
+
     def aggiorna_fascicolo(self) -> None:
         """Riepilogo per cliente: documenti presenti, cosa aggiungere per altri controlli, esito incrociato."""
         from .confronto import fascicolo
@@ -633,7 +655,8 @@ class App:
                 t.insert("end", "Controlli incrociati: ", "nota")
                 t.insert("end", f"{SIMBOLI[s.esito]} {s.esito.value} – {testo}\n", s.esito.value)
             for voce in s.suggerimenti:
-                t.insert("end", f"+ Aggiungi {voce[0].lower()}{voce[1:]}\n", "manca")
+                iniziale = voce[0].lower() if voce[1:2].islower() else voce[0]  # "CU" resta maiuscolo
+                t.insert("end", f"+ Aggiungi {iniziale}{voce[1:]}\n", "manca")
         t.configure(state="disabled")
 
     def rimuovi_selezionato(self, elimina_copia: bool = False) -> None:

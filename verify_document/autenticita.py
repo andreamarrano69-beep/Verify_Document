@@ -209,7 +209,17 @@ def analizza_pdf(percorso: str | Path, report: Report | None = None) -> list[Ind
             indizi.append(Indizio("Programma di creazione", Esito.INFO, f"{elenco} (non classificato)"))
         else:
             categoria, esito, punti = cl
-            indizi.append(Indizio("Programma di creazione", esito, f"{elenco} → {categoria}", punti))
+            spiegazioni = {
+                "editor PDF online": " — il file è stato caricato su un sito (es. iLovePDF) per unirlo, comprimerlo, "
+                                     "convertirlo o modificarlo: non prova un'alterazione, ma non è il PDF originale del "
+                                     "programma paghe/ente. Chiedere il file originale (es. dal portale del datore di lavoro)",
+                "programma di modifica PDF/immagini": " — il file è stato aperto e salvato con un programma che permette "
+                                                      "di modificarlo: chiedere se possibile il PDF originale",
+                "elaboratore di testi / foglio di calcolo": " — documento prodotto con Word/Excel o simili, non con un "
+                                                            "programma paghe",
+            }
+            indizi.append(Indizio("Programma di creazione", esito,
+                                  f"{elenco} → {categoria}{spiegazioni.get(categoria, '')}", punti))
 
     # 2. Date -------------------------------------------------------------------------
     creazione = parse_data_pdf(info.get("CreationDate", ""))

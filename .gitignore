@@ -12,3 +12,6 @@ clienti/
 !esempi/*.pdf
 report/
 !docs/*.pdf
+
+# Tesseract preparato per il .exe (scripts/prepara_tesseract.py)
+/tesseract/

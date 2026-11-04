@@ -254,6 +254,8 @@ class App:
 
         # Barra di stato
         self.var_stato = tk.StringVar(value="Pronto. Tutti i documenti vengono elaborati in locale.")
+        self.avviso_ocr_mostrato = False
+        self.root.after(300, self._stato_ocr)
         stato = ttk.Frame(self.root, padding=(10, 2))
         stato.pack(fill="x", side="bottom")
         ttk.Label(stato, textvariable=self.var_stato).pack(side="left")
@@ -320,12 +322,28 @@ class App:
 
         threading.Thread(target=lavoro, daemon=True).start()
 
+    def _stato_ocr(self) -> None:
+        from .estrazione import trova_tesseract
+
+        percorso, lingua = trova_tesseract()
+        if percorso:
+            self.var_stato.set(f"Pronto. OCR attivo (Tesseract, lingua {lingua or 'predefinita'}) per scansioni "
+                               "e foto. Tutti i documenti vengono elaborati in locale.")
+        else:
+            self.var_stato.set("Pronto. OCR non disponibile: scansioni e foto non si possono leggere "
+                               "(installa Tesseract). Tutti i documenti vengono elaborati in locale.")
+
     def _controlla_coda(self) -> None:
         try:
             while True:
                 chiave, ris = self.coda.get_nowait()
                 self.in_corso -= 1
                 self.risultati[chiave] = ris
+                if ris.errore and ris.errore.startswith("Questo documento è una scansione") \
+                        and not self.avviso_ocr_mostrato:
+                    self.avviso_ocr_mostrato = True
+                    self.root.after(100, lambda testo=ris.errore: messagebox.showwarning(
+                        "Serve l'OCR", testo, parent=self.root))
                 if self.lista.exists(chiave):
                     esito = ris.esito
                     testo_esito = f"{SIMBOLI[esito]} {esito.value}" if ris.report else "✘ ILLEGGIBILE"

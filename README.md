@@ -33,7 +33,18 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 pip install -r requirements.txt
 ```
 
-OCR (solo per scansioni/foto): installare [Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) con la lingua italiana, poi `pip install pytesseract Pillow`.
+### OCR: scansioni e foto
+
+Le buste paga e i documenti **scansionati o fotografati** (PDF fatti di immagini, JPG, PNG) si leggono con
+l'OCR **Tesseract**:
+
+- **programma .exe**: Tesseract con la lingua italiana è **già incluso**, non serve installare nulla;
+- **da Python**: installare Tesseract da <https://github.com/UB-Mannheim/tesseract/wiki>
+  (durante l'installazione selezionare la lingua **Italian**). Il programma lo trova da solo anche se non è nel PATH.
+
+La barra in basso dell'interfaccia indica se l'OCR è attivo. Gli errori tipici dell'OCR sui numeri
+(O al posto di 0, l al posto di 1, spazi dentro gli importi) vengono corretti automaticamente.
+Per i documenti scansionati i controlli di autenticità del file sono limitati: se possibile chiedere il PDF originale.
 
 ## Sintesi: regime e importo mensile in evidenza
 
@@ -175,8 +186,9 @@ esegue i test e l'autotest e lo mette a disposizione nella pagina **Actions** de
 (apri l'ultima esecuzione di "Crea exe Windows" → sezione **Artifacts** → `VerifyDocument-<versione>-windows`).
 Per una versione da distribuire si crea un tag, ad esempio `v0.2.0`: lo zip viene allegato a una **Release**.
 
-**2. Sul tuo PC** – doppio clic su **`crea_exe.bat`** (installa PyInstaller, esegue i test, crea il programma,
-lo verifica e prepara lo zip):
+**2. Sul tuo PC** – doppio clic su **`crea_exe.bat`** (installa PyInstaller, prepara l'OCR, esegue i test,
+crea il programma, lo verifica e prepara lo zip). Per includere l'OCR serve Tesseract installato sul PC
+(`scripts/prepara_tesseract.py` lo copia nel programma insieme alla lingua italiana):
 
 ```
 dist\VerifyDocument\VerifyDocument.exe            ← il programma
@@ -231,6 +243,7 @@ verify_document/
 avvia_gui.py          avvio del programma (anche per il .exe)
 VerifyDocument.spec   configurazione di PyInstaller
 crea_exe.bat          crea il .exe su Windows (doppio clic)
+scripts/              prepara_tesseract.py: copia Tesseract (OCR) da includere nel .exe
 assets/               icona del programma
 .github/workflows/    creazione automatica del .exe su GitHub
 esempi/               documenti FITTIZI di prova (esempi/confronto: 3 buste + carta d'identità;

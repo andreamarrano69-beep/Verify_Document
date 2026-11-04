@@ -68,6 +68,22 @@ def esegui() -> int:
         immagine = pdfium.PdfDocument(str(tmp / "busta.pdf"))[0].render(scale=1).to_pil()
         return f"pagina {immagine.size[0]}x{immagine.size[1]}"
 
+    def ocr():
+        import pypdfium2 as pdfium
+
+        from .estrazione import _ocr_immagine, trova_tesseract
+
+        percorso, lingua = trova_tesseract()
+        if percorso is None:
+            if e_eseguibile():
+                raise RuntimeError("Tesseract non incluso nel programma: scansioni e foto non leggibili")
+            return "non disponibile (Tesseract non installato) - ignorato fuori dal .exe"
+        immagine = pdfium.PdfDocument(str(tmp / "busta.pdf"))[0].render(scale=200 / 72).to_pil()
+        testo = _ocr_immagine(immagine)
+        assert "NETTO IN BUSTA" in testo.upper() and "1.632,00" in testo, testo[:300]
+        incluso = "incluso nel programma" if "tesseract" in Path(percorso).parent.name.lower() else percorso
+        return f"lingua {lingua}, {incluso}"
+
     def report_pdf():
         from .cli import analizza_documento
         from .report_pdf import genera_report_pdf
@@ -91,6 +107,7 @@ def esegui() -> int:
     passo("Confronto tra documenti", confronto)
     passo("Lettura PDF e controllo autenticità", pdf_e_autenticita)
     passo("Rendering PDF (pypdfium2, per l'OCR)", pdfium)
+    passo("OCR di una busta paga scansionata (Tesseract)", ocr)
     passo("Creazione report PDF", report_pdf)
     passo("Interfaccia grafica (Tkinter)", interfaccia)
     righe.append("ESITO: " + ("TUTTO OK" if not errori else f"{errori} ERRORI"))

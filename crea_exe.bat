@@ -3,31 +3,43 @@ REM ===================================================================
 REM  Crea VerifyDocument.exe (doppio clic). Da rifare a ogni modifica.
 REM  Risultato: dist\VerifyDocument\VerifyDocument.exe
 REM             dist\VerifyDocument-<versione>-windows.zip
+REM  Per includere lOCR serve Tesseract installato sul PC:
+REM  https://github.com/UB-Mannheim/tesseract/wiki
 REM ===================================================================
 cd /d "%~dp0"
 set PY=python
 if exist ".venv\Scripts\python.exe" set PY=.venv\Scripts\python.exe
 
-echo [1/5] Installazione librerie e PyInstaller...
+echo [1/6] Installazione librerie e PyInstaller...
 %PY% -m pip install --quiet -r requirements-dev.txt pyinstaller
 if errorlevel 1 goto errore
 
-echo [2/5] Test automatici...
+echo [2/6] Preparazione OCR (Tesseract)...
+%PY% scripts\prepara_tesseract.py
+if errorlevel 1 (
+    echo.
+    echo ATTENZIONE: Tesseract non trovato. Il programma non potra leggere scansioni e foto.
+    echo Installalo da https://github.com/UB-Mannheim/tesseract/wiki e rilancia questo file.
+    choice /m "Continuare comunque senza OCR"
+    if errorlevel 2 goto errore
+)
+
+echo [3/6] Test automatici...
 %PY% -m unittest discover -s tests
 if errorlevel 1 goto errore
 
-echo [3/5] Creazione del programma (1-3 minuti)...
+echo [4/6] Creazione del programma (1-3 minuti)...
 %PY% -m PyInstaller VerifyDocument.spec --noconfirm --clean --log-level WARN
 if errorlevel 1 goto errore
 
-echo [4/5] Autotest del programma creato...
+echo [5/6] Autotest del programma creato...
 start "" /wait "dist\VerifyDocument\VerifyDocument.exe" --autotest
 set ESITO=%errorlevel%
 type "%TEMP%\verify_document_autotest.log"
 echo.
 if not "%ESITO%"=="0" goto errore
 
-echo [5/5] Creazione dello zip da distribuire...
+echo [6/6] Creazione dello zip da distribuire...
 for /f %%v in ('%PY% -c "import verify_document; print(verify_document.__version__)"') do set VER=%%v
 powershell -NoProfile -Command "Compress-Archive -Path dist\VerifyDocument -DestinationPath dist\VerifyDocument-%VER%-windows.zip -Force"
 

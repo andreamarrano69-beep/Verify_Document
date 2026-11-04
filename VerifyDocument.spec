@@ -8,7 +8,16 @@
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
+import os
+
 datas = [("esempi", "esempi"), ("assets", "assets")]
+
+# OCR: se è stata preparata la cartella ./tesseract (scripts/prepara_tesseract.py) viene inclusa
+if os.path.isdir("tesseract"):
+    datas.append(("tesseract", "tesseract"))
+    print("Tesseract (OCR) incluso nel programma")
+else:
+    print("ATTENZIONE: cartella 'tesseract' assente: il programma non potrà leggere scansioni e foto")
 binaries = []
 hiddenimports = collect_submodules("verify_document")
 

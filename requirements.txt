@@ -4,9 +4,8 @@ pdfplumber>=0.11
 pypdfium2>=4.0
 # Creazione del report PDF
 reportlab>=4.0
-# --- Opzionale: OCR per documenti scansionati/foto (carta d'identità, ecc.) ---
-# Richiede anche il programma Tesseract con lingua italiana installato nel sistema.
-# pytesseract>=0.3
-# Pillow>=10
+# OCR per documenti scansionati e foto (richiede il programma Tesseract: nel .exe è già incluso)
+pytesseract>=0.3
+Pillow>=10
 # --- Opzionale: trascinare i file nella finestra dell'interfaccia grafica ---
 # tkinterdnd2>=0.4

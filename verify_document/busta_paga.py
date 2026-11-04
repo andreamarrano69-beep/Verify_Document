@@ -15,6 +15,7 @@ from decimal import Decimal
 
 from .report import Esito, Report, cerca_importo, cerca_testo
 from .validators import (
+    trova_codici_fiscali,
     CF_REGEX,
     PIVA_REGEX,
     decodifica_codice_fiscale,
@@ -148,7 +149,7 @@ def analizza(testo: str) -> Report:
     else:
         r.aggiungi("P.IVA azienda", Esito.ERRORE, f"{piva} NON valida (cifra di controllo errata)")
 
-    codici = list(dict.fromkeys(m.group(0) for m in CF_REGEX.finditer(testo.upper())))
+    codici = trova_codici_fiscali(testo)
     cf = codici[0] if codici else None
     d["codice_fiscale_dipendente"] = cf
     if not cf:

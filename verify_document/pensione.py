@@ -19,7 +19,7 @@ from decimal import Decimal
 
 from .busta_paga import _trova_periodo
 from .report import Esito, Report, cerca_importo, cerca_testo
-from .validators import CF_REGEX, decodifica_codice_fiscale, formatta_euro
+from .validators import trova_codici_fiscali, CF_REGEX, decodifica_codice_fiscale, formatta_euro
 
 MENSILITA = 13  # le pensioni sono pagate in 13 rate (la tredicesima a dicembre)
 
@@ -95,7 +95,7 @@ def analizza(testo: str) -> Report:
     d["nominativo"] = m.group(1).strip() if m else None
 
     # --- Pensionato --------------------------------------------------------------------
-    codici = list(dict.fromkeys(x.group(0) for x in CF_REGEX.finditer(testo.upper())))
+    codici = trova_codici_fiscali(testo)
     cf = codici[0] if codici else None
     d["codice_fiscale_pensionato"] = cf
     if not cf:

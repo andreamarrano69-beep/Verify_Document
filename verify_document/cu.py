@@ -24,6 +24,7 @@ from decimal import Decimal
 from .busta_paga import ALIQUOTE_INPS
 from .report import Esito, Report, cerca_importo, cerca_testo
 from .validators import (
+    trova_codici_fiscali,
     CF_REGEX,
     PIVA_REGEX,
     decodifica_codice_fiscale,
@@ -113,12 +114,9 @@ def _trova_dipendente(testo: str, sostituto: str | None) -> str | None:
     m = re.search(r"dati\s+(?:anagrafici\s+)?(?:relativi\s+al\s+)?(?:dipendente|percipiente|lavoratore)",
                   testo, re.IGNORECASE)
     zona = testo[m.end():] if m else testo
-    for x in CF_REGEX.finditer(zona.upper()):
-        if x.group(0) != sostituto:
-            return x.group(0)
-    for x in CF_REGEX.finditer(testo.upper()):
-        if x.group(0) != sostituto:
-            return x.group(0)
+    for cf in trova_codici_fiscali(zona) + trova_codici_fiscali(testo):
+        if cf != sostituto:
+            return cf
     return None
 
 

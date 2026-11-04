@@ -12,6 +12,7 @@ from datetime import date
 
 from .report import Esito, Report, cerca_testo
 from .validators import (
+    trova_codici_fiscali,
     CF_REGEX,
     codice_cognome,
     codice_nome,
@@ -63,7 +64,7 @@ def analizza(testo: str, riferimento: date | None = None) -> Report:
     d["data_scadenza"] = parse_data(cerca_testo(testo, [r"scadenza", r"valid[ao]\s+fino\s+al"], DATA) or "")
     d["data_rilascio"] = parse_data(cerca_testo(testo, [r"(?:data\s+(?:di\s+)?)?(?:rilascio|emissione)"], DATA) or "")
 
-    codici = list(dict.fromkeys(m.group(0) for m in CF_REGEX.finditer(testo.upper())))
+    codici = trova_codici_fiscali(testo)
     cf = codici[0] if codici else None
     d["codice_fiscale"] = cf
 

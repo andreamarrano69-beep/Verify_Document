@@ -17,7 +17,7 @@ import re
 from decimal import Decimal
 
 from .report import Esito, Report, cerca_importo
-from .validators import CF_REGEX, decodifica_codice_fiscale, formatta_euro
+from .validators import trova_codici_fiscali, CF_REGEX, decodifica_codice_fiscale, formatta_euro
 
 SOGLIA_FORFETTARIO = Decimal("85000")       # ricavi/compensi anno precedente
 SOGLIA_USCITA_IMMEDIATA = Decimal("100000")  # uscita in corso d'anno
@@ -151,7 +151,7 @@ def analizza(testo: str) -> Report:
         # "REDDITI 2025" si riferisce al periodo d'imposta 2024
         d["periodo_imposta"] = anno if "periodo" in m.group(0).lower() else anno - 1
 
-    codici = list(dict.fromkeys(x.group(0) for x in CF_REGEX.finditer(testo.upper())))
+    codici = trova_codici_fiscali(testo)
     d["codice_fiscale_contribuente"] = codici[0] if codici else None
     if codici:
         info = decodifica_codice_fiscale(codici[0])

@@ -65,6 +65,51 @@ def valida_codice_fiscale(cf: str) -> bool:
     return carattere_controllo_cf(cf[:15]) == cf[15]
 
 
+# Scambi tipici dell'OCR tra lettere e cifre
+_OCR_A_CIFRA = {"O": "0", "D": "0", "Q": "0", "I": "1", "L": "1", "|": "1", "Z": "2", "S": "5",
+                "G": "6", "T": "7", "B": "8"}
+_OCR_A_LETTERA = {v: k for k, v in _OCR_A_CIFRA.items() if k not in ("D", "Q", "L", "|")}
+_POSIZIONI_LETTERA = (0, 1, 2, 3, 4, 5, 8, 11, 15)
+
+
+def _correggi_cf_ocr(candidato: str) -> str | None:
+    """Corregge gli scambi lettera/cifra dell'OCR secondo la struttura del CF; valido solo se il controllo torna."""
+    c = list(candidato.upper())
+    if len(c) != 16:
+        return None
+    for i, ch in enumerate(c):
+        if i in _POSIZIONI_LETTERA:
+            c[i] = _OCR_A_LETTERA.get(ch, ch)
+        elif ch not in "0123456789LMNPQRSTUV":  # posizioni numeriche (ammesse le lettere dell'omocodia)
+            c[i] = _OCR_A_CIFRA.get(ch, ch)
+    cf = "".join(c)
+    return cf if valida_codice_fiscale(cf) else None
+
+
+def trova_codici_fiscali(testo: str) -> list[str]:
+    """Codici fiscali presenti nel testo (in ordine, senza doppioni).
+
+    Prima quelli scritti correttamente (anche se con carattere di controllo errato, per segnalarlo);
+    se non ce ne sono, quelli ricostruiti correggendo gli errori dell'OCR (O/0, I/1, S/5, B/8, ...),
+    anche spezzati in due parole, accettati solo se il carattere di controllo è giusto.
+    """
+    alto = testo.upper()
+    esatti = list(dict.fromkeys(m.group(0) for m in CF_REGEX.finditer(alto)))
+    if esatti:
+        return esatti
+    parole = re.findall(r"[A-Z0-9|]+", alto)
+    corretti = []
+    for i, p in enumerate(parole):
+        candidati = [p] if len(p) == 16 else []
+        if i + 1 < len(parole) and len(p) + len(parole[i + 1]) == 16:
+            candidati.append(p + parole[i + 1])  # CF spezzato dall'OCR
+        for c in candidati:
+            cf = _correggi_cf_ocr(c)
+            if cf:
+                corretti.append(cf)
+    return list(dict.fromkeys(corretti))
+
+
 @dataclass
 class DatiCodiceFiscale:
     codice: str

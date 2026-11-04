@@ -46,6 +46,18 @@ class TestNormalizzazione(unittest.TestCase):
             self.assertEqual(normalizza_ocr(t), t)
 
 
+class TestCodiceFiscaleOcr(unittest.TestCase):
+    def test_correzioni(self):
+        from verify_document.validators import trova_codici_fiscali
+
+        self.assertEqual(trova_codici_fiscali("CF RSSMRA8OA01H5O1U"), ["RSSMRA80A01H501U"])  # O al posto di 0
+        self.assertEqual(trova_codici_fiscali("CF R5SMRA80AO1H501U"), ["RSSMRA80A01H501U"])  # 5/S e O/0
+        self.assertEqual(trova_codici_fiscali("CF RSSMRA80A01 H501U"), ["RSSMRA80A01H501U"])  # spezzato
+        # un CF scritto bene ma con controllo errato resta così (va segnalato come errore)
+        self.assertEqual(trova_codici_fiscali("CF RSSMRA80A01H501X"), ["RSSMRA80A01H501X"])
+        self.assertEqual(trova_codici_fiscali("ABCDEFGHIJKLMNOP"), [])  # 16 lettere qualsiasi: niente
+
+
 class TestSenzaTesseract(unittest.TestCase):
     def test_messaggio_con_istruzioni(self):
         with tempfile.TemporaryDirectory() as tmp, \

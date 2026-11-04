@@ -60,9 +60,11 @@ class TestBustaAColonne(unittest.TestCase):
         for chiave, atteso in ATTESI.items():
             # in caso di errore si vede il testo letto (utile perché l'OCR cambia tra versioni di Tesseract)
             self.assertEqual(r.dati.get(chiave), Decimal(atteso), f"{chiave}\n--- testo letto ---\n{testo}")
-        self.assertEqual(r.dati["codice_fiscale_dipendente"], "RSSMRA80A01H501U")
-        self.assertEqual(r.dati["data_assunzione"].isoformat(), "2019-03-01")
-        self.assertEqual(r.esito_globale, Esito.OK, r.to_dict()["controlli"])
+        letto = f"\n--- testo letto ---\n{testo}"
+        self.assertEqual(r.dati["codice_fiscale_dipendente"], "RSSMRA80A01H501U", letto)
+        self.assertEqual(r.dati["data_assunzione"].isoformat() if r.dati["data_assunzione"] else None,
+                         "2019-03-01", letto)
+        self.assertEqual(r.esito_globale, Esito.OK, f"{r.to_dict()['controlli']}{letto}")
 
     def test_pdf_nativo(self):
         self._verifica(self.nativa)

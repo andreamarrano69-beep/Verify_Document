@@ -147,3 +147,37 @@ class TestCuACaselle(unittest.TestCase):
         self.assertEqual(r.dati["reddito_totale"], Decimal("25381.33"), letto)
         self.assertEqual(r.dati["ritenute_irpef"], Decimal("4161.95"), letto)
         self.assertNotEqual(r.esito_globale, Esito.ERRORE, letto)
+
+
+def parole_da_testo_a_colonne(testo: str, larghezza_carattere: float = 4.0, interlinea: float = 12.0):
+    """Ricostruisce le parole con posizione da un testo letto dall'OCR (colonne = spazi)."""
+    import re
+
+    parole = []
+    for n, riga in enumerate(testo.splitlines()):
+        for m in re.finditer(r"\S+", riga):
+            parole.append(Parola(m.group(0), m.start() * larghezza_carattere, m.end() * larghezza_carattere,
+                                 n * interlinea, n * interlinea + 8, ocr=True))
+    return parole
+
+
+class TestTestiOcrReali(unittest.TestCase):
+    """Testi letti dal Tesseract di Windows (versione diversa da quella di sviluppo): restano come prove fisse."""
+
+    def test_cu_letta_su_windows(self):
+        from verify_document.cli import analizza_testo
+        from verify_document.layout import contesto_parole
+
+        testo = (Path(__file__).parent / "dati" / "cu_ocr_windows.txt").read_text(encoding="utf-8")
+        with contesto_parole(parole_da_testo_a_colonne(testo)):
+            r = analizza_testo(testo)
+        d = r.dati
+        self.assertEqual(r.tipo_documento, "Certificazione Unica (CU)")
+        self.assertEqual(d["codice_fiscale_dipendente"], "RSSMRA80A01H501U")  # letto "RSSMRABOAO1H501U"
+        self.assertEqual(d["reddito_totale"], Decimal("25381.33"))           # "(mdeterminato)"
+        self.assertIsNone(d["reddito_determinato"])                          # non contato due volte
+        self.assertEqual(d["ritenute_irpef"], Decimal("4161.95"))            # "21 Ritenute" senza "Irpef"
+        self.assertEqual(d["giorni_lavoro"], 365)
+        self.assertEqual(d["imposta_lorda"], Decimal("5837.71"))
+        self.assertEqual(d["imponibile_previdenziale"], Decimal("27950.00"))
+        self.assertNotEqual(r.esito_globale, Esito.ERRORE, r.to_dict()["controlli"])

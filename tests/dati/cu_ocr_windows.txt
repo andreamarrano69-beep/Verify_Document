@@ -1,0 +1,28 @@
+CERTIFICAZIONE                      UNICA          2026
+CERTIFICAZIONE     LAVORO    DIPENDENTE,     ASSIMILATI   ED  ASSISTENZA    FISCALE     Periodo d'imposta 2025
+DATI   RELATIVI    AL  SOSTITUTO       D'IMPOSTA
+                                       i                                                                                           i
+ 1 Codice fiscale                                   2 Cognome  o Denommnazione
+                               12345678903                                                                                                              ESEMPIO      SRL
+DATI   RELATIVI    AL  DIPENDENTE,       PENSIONATO        O  ALTRO    PERCETTORE        DELLE     SOMME
+ 1 Codice fiscaie                                   2  Cognome                                                   3 Nome
+                       RSSMRABOAO1H501U                                                               ROSSI                                                       MARIO
+DATI   FISCALI
+ 41_ Readit di lavoro     ed               2  Reddit di lavoro dipendente ed          3        di pensione                      6   Numero di giorni per i quali spettano
+ assimilati (mdeterminato)                  assimilati (determanato)                                                             le detrazioni Lavoro dipenderte
+                          25.381,33                                                                                                                                   365
+   ?:igunl?                                6 Dcummo-mpono                            9  Data cossazione rapporto                10 in forza ai 31/12
+                                                                    01/03/2019                                                                                           x
+ 21 Ritenute                               22 Addinonale regionale                    26 Saido 2025 addizionale                  29 Accomto 2026 addizionale
+                                           all'irpef                                  comunale all'irpef                         comunale
+                            4.161,95                                       380,00                                      95,00                                      55,00
+                                                      i
+DETRAZIONI      E  CREDITI
+ M imposta lorda                           MDetrazioni per canch?                        Detrazioni per redditi di               37I otuie detrazioni
+                                           di tamiglia                                lavoro dipendente
+                            5.837,71                                                                              1.675,76                                   1.675,76
+392 rattamento integrativo erogato
+DATI   PREVIDENZIALI       E ASSISTENZIALI       INPS
+ 1 Matricoia azienda                                      4 imponibile previdenziale                               6  Contributi a canco del
+                                                                                                                   lavoratore trattenuti
+                                       1234567890                                                 27.950,00                                                  2.568,67

@@ -62,9 +62,11 @@ ETICHETTE = {
     ],
     "reddito_pensione": [r"redditi\s+di\s+pensione"],
     "giorni_lavoro": [r"(?:numero\s+(?:di\s+)?)?giorni\s+(?:di\s+)?lavoro\s+dipendente", r"giorni\s+lavorati",
-                      r"(?:detrazioni|giorni)\s*[-–]?\s*lavoro\s+dipendente"],
+                      r"(?:detrazioni|giorni)\s*[-–]?\s*lavoro\s+dipendente",
+                      r"detrazioni\s+lavoro\s+dipendente"],  # forma semplice: ricerca approssimata (OCR)
     "giorni_pensione": [r"(?:numero\s+(?:di\s+)?)?giorni\s+(?:di\s+)?pensione", r"(?:detrazioni|giorni)\s*[-–]?\s*pensione"],
-    "ritenute_irpef": [r"ritenute\s+irpef", r"ritenute\s+d['’]acconto\s+irpef"],
+    "ritenute_irpef": [r"ritenute\s+irpef", r"ritenute\s+d['’]acconto\s+irpef",
+                       r"\britenute\b(?!\s+(?:irpef\s+)?sospes)"],  # riserva: "Irpef" perso dall'OCR
     "addizionale_regionale": [r"addizionale\s+regionale(?:\s+all['’]\s*irpef)?(?!\s+sospes)",
                               r"addizionale\s+regionale"],  # forma semplice: ricerca approssimata (OCR)
     "addizionale_comunale_saldo": [r"saldo(?:\s+\d{4})?\s+addizionale(?:\s+comunale)?",

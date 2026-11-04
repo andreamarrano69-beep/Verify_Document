@@ -108,6 +108,28 @@ class TestAutenticitaPdf(unittest.TestCase):
         self.assertEqual(c["Testo sovrapposto"].esito, Esito.ERRORE)
         self.assertIn("«6» coperto da «9»", c["Testo sovrapposto"].dettaglio)
 
+    def test_modulo_prestampato_non_e_sovrapposizione(self):
+        """Intestazioni stampate una sopra l'altra e scritte verticali (moduli Zucchetti): nessun allarme."""
+        p = self.dir / "prestampato.pdf"
+        c = canvas.Canvas(str(p), pagesize=A4)
+        c.setProducer("Zucchetti HR Paghe")
+        c.setFont("Courier", 9)
+        for i, riga in enumerate(self.righe):
+            c.drawString(30, 800 - 12 * i, riga)
+        c.setFont("Helvetica", 6)
+        c.drawString(300, 300, "Detrazioni")
+        c.drawString(300, 300, "Giorni")            # due intestazioni nello stesso punto
+        c.saveState()
+        c.translate(15, 400)
+        c.rotate(90)
+        c.drawString(0, 0, "Quota da Assoggettare Inps")  # scritta verticale sul bordo
+        c.drawString(0, 0, "Maggiorazione edili")
+        c.restoreState()
+        c.save()
+        k = controlli_pdf(analizza_file(p, usa_ocr=False))
+        self.assertNotIn("Testo sovrapposto", k)
+        self.assertEqual(k["Indice di rischio alterazione"].esito, Esito.OK)
+
     def test_annotazione_e_word(self):
         w = PdfWriter(clone_from=str(self.originale))
         x, y = self.pos_netto

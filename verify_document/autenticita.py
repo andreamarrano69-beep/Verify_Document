@@ -344,15 +344,20 @@ def _variante_stile(font: str, tutte_parole: Counter) -> bool:
 
 
 def _testo_sovrapposto(pagina, n: int) -> list[str]:
-    """Caratteri diversi disegnati nello stesso punto (testo riscritto sopra l'originale)."""
+    """Cifre diverse disegnate nello stesso punto (importo riscritto sopra l'originale, es. «6» coperto da «9»).
+
+    Si ignorano il testo ruotato/verticale e le sovrapposizioni di sole lettere: nei moduli prestampati
+    (es. Zucchetti) capita che due intestazioni siano stampate una sopra l'altra, senza che sia un'alterazione.
+    """
     celle: dict[tuple, str] = {}
     trovati = []
     for c in pagina.chars:
-        if not c["text"].strip():
+        if not c["text"].strip() or not c.get("upright", True):
             continue
         chiave = (round(c["x0"]), round(c["top"]))
         precedente = celle.get(chiave)
-        if precedente is not None and precedente != c["text"]:
+        if precedente is not None and precedente != c["text"] \
+                and (precedente.isdigit() or c["text"].isdigit()):
             trovati.append((chiave, precedente, c["text"]))
         celle[chiave] = c["text"]
     if not trovati:

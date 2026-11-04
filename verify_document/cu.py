@@ -58,6 +58,7 @@ ETICHETTE = {
         r"redditi\s+di\s+lavoro\s+dipendente\s+ed?\s+assimilati[^\n]{0,40}(?<!in)determinato",
         r"(?<!in)\btempo\s+determinato",
         r"(?<![A-Za-z])determinato\b",
+        r"\bdeterminato\b",  # forma semplice: ricerca approssimata (OCR)
     ],
     "reddito_pensione": [r"redditi\s+di\s+pensione"],
     "giorni_lavoro": [r"(?:numero\s+(?:di\s+)?)?giorni\s+(?:di\s+)?lavoro\s+dipendente", r"giorni\s+lavorati",
@@ -190,6 +191,10 @@ def analizza(testo: str) -> Report:
         if d[k] is not None:
             d[k] = int(d[k])
 
+    # stessa casella letta due volte (descrizioni simili lette male dall'OCR): due punti diversi con lo stesso
+    # identico importo sono praticamente impossibili, il secondo si scarta per non contare il reddito due volte
+    if d["reddito_determinato"] is not None and d["reddito_determinato"] == d["reddito_indeterminato"]:
+        d["reddito_determinato"] = None
     lavoro = [d[k] for k in ("reddito_indeterminato", "reddito_determinato") if d[k]]
     d["reddito_lavoro_dipendente"] = sum(lavoro, Decimal(0)) if lavoro else None
     if lavoro and d["reddito_pensione"]:

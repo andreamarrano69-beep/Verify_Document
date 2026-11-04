@@ -158,7 +158,8 @@ def _corrispondenze_approssimate(etichetta: str, stringa: str, soglia: float = 0
         return []
     bassa = stringa.lower()
     risultati = []
-    inizi = [0] + [m.end() for m in re.finditer(r"\s+", bassa)]
+    # inizio di ogni parola, anche dopo una parentesi o un simbolo ("(mdeterminato)")
+    inizi = sorted({0, *(m.end() for m in re.finditer(r"[\s(\[\"'«{|]+", bassa))})
     for i in inizi:
         punteggi = [(SequenceMatcher(None, bassa[i:i + n], letterale).ratio(), n)
                     for n in (len(letterale) - 1, len(letterale), len(letterale) + 1) if i + n <= len(bassa)]

@@ -22,6 +22,7 @@ from datetime import date
 from decimal import Decimal
 
 from .busta_paga import ALIQUOTE_INPS
+from .layout import cf_corretto_ocr
 from .report import Esito, Report, cerca_importo, cerca_testo
 from .validators import (
     trova_codici_fiscali,
@@ -144,8 +145,13 @@ def analizza(testo: str) -> Report:
         r.aggiungi("Sostituto d'imposta", Esito.OK if valido else Esito.ERRORE,
                    f"{sostituto} {'valido' if valido else 'NON valido (cifra di controllo errata)'}")
 
-    cf = _trova_dipendente(testo, sostituto)
+    m = re.search(r"(?i:cognome)\s*[:\-]?\s*([A-Z][A-Z'À-Ü ]+?)\s+(?i:nome)\s*[:\-]?\s*([A-Z][A-Z'À-Ü]+(?: [A-Z'À-Ü]+)?)\b",
+                  testo[testo.upper().find("DIPENDENTE"):] if "DIPENDENTE" in testo.upper() else testo)
+    d["nominativo"] = f"{m.group(1).strip()} {m.group(2).strip()}" if m else None
+    cf, nota_cf = cf_corretto_ocr(_trova_dipendente(testo, sostituto), d["nominativo"])
     d["codice_fiscale_dipendente"] = cf
+    if nota_cf:
+        r.aggiungi("Codice fiscale corretto (OCR)", Esito.ATTENZIONE, nota_cf)
     if not cf:
         r.aggiungi("Codice fiscale dipendente", Esito.ERRORE, "Codice fiscale non trovato")
     else:
@@ -153,9 +159,6 @@ def analizza(testo: str) -> Report:
         r.aggiungi("Codice fiscale dipendente", Esito.OK if info.valido else Esito.ERRORE,
                    f"{cf} {'valido' if info.valido else 'NON valido (carattere di controllo errato)'}")
 
-    m = re.search(r"(?i:cognome)\s*[:\-]?\s*([A-Z][A-Z'À-Ü ]+?)\s+(?i:nome)\s*[:\-]?\s*([A-Z][A-Z'À-Ü]+(?: [A-Z'À-Ü]+)?)\b",
-                  testo[testo.upper().find("DIPENDENTE"):] if "DIPENDENTE" in testo.upper() else testo)
-    d["nominativo"] = f"{m.group(1).strip()} {m.group(2).strip()}" if m else None
 
     inizio = cerca_testo(testo, [r"data\s+(?:di\s+)?inizio(?:\s+del)?\s+rapporto", r"data\s+(?:di\s+)?assunzione",
                                  r"data\s+inizio"], r"(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})")

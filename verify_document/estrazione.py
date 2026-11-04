@@ -102,7 +102,7 @@ def _da_pdf(p: Path, usa_ocr: bool) -> tuple[str, list]:
     parole, scostamento = [], 0.0
     for altezza, parole_pagina in zip(altezze, parole_pagine):
         for w in parole_pagina:
-            parole.append(Parola(w.testo, w.x0, w.x1, w.top + scostamento, w.bottom + scostamento))
+            parole.append(Parola(w.testo, w.x0, w.x1, w.top + scostamento, w.bottom + scostamento, w.ocr))
         scostamento += altezza + SPAZIO_TRA_PAGINE
     return testo, parole
 
@@ -245,6 +245,6 @@ def _ocr_parole(immagine, pixel_per_punto: float | None = None) -> tuple[str, li
     migliori = _combina_letture(letture)
 
     scala = 1.0 / (fattore * pixel_per_punto)
-    parole = [Parola(normalizza_ocr(t), x * scala, (x + w) * scala, y * scala, (y + h) * scala)
+    parole = [Parola(normalizza_ocr(t), x * scala, (x + w) * scala, y * scala, (y + h) * scala, ocr=True)
               for t, _, x, y, w, h in migliori]
     return normalizza_ocr(testo_da_parole(parole)), parole

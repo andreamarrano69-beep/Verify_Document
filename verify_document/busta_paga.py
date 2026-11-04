@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 from decimal import Decimal
 
+from .layout import cf_corretto_ocr
 from .report import Esito, Report, cerca_importo, cerca_testo
 from .validators import (
     trova_codici_fiscali,
@@ -149,9 +150,17 @@ def analizza(testo: str) -> Report:
     else:
         r.aggiungi("P.IVA azienda", Esito.ERRORE, f"{piva} NON valida (cifra di controllo errata)")
 
+    m = re.search(r"(?i:dipendente|lavoratore|cognome\s+e\s+nome)\s*[:\-]\s*([A-Z][A-Z'À-Ü]+(?: [A-Z'À-Ü]+){1,3})(?=\s{2,}|\s*\n|\s+(?i:codice|c\.f))", testo)
+    d["nominativo"] = m.group(1).strip() if m else None
+    if not d["nominativo"]:  # etichetta sopra e nome sotto (impaginazione a colonne)
+        d["nominativo"] = cerca_testo(testo, [r"cognome\s+e\s+nome", r"nominativo"],
+                                      r"([A-Z][A-Z'À-Ü]+(?: [A-Z'À-Ü]+){1,3})")
+
     codici = trova_codici_fiscali(testo)
-    cf = codici[0] if codici else None
+    cf, nota_cf = cf_corretto_ocr(codici[0] if codici else None, d["nominativo"])
     d["codice_fiscale_dipendente"] = cf
+    if nota_cf:
+        r.aggiungi("Codice fiscale corretto (OCR)", Esito.ATTENZIONE, nota_cf)
     if not cf:
         r.aggiungi("Codice fiscale dipendente", Esito.ERRORE, "Codice fiscale non trovato")
     else:
@@ -192,8 +201,6 @@ def analizza(testo: str) -> Report:
                 dettaglio += f" — età all'assunzione {eta} anni: incoerente con il CF"
         r.aggiungi("Data assunzione", esito, dettaglio)
 
-    m = re.search(r"(?i:dipendente|lavoratore|cognome\s+e\s+nome)\s*[:\-]\s*([A-Z][A-Z'À-Ü]+(?: [A-Z'À-Ü]+){1,3})(?=\s{2,}|\s*\n|\s+(?i:codice|c\.f))", testo)
-    d["nominativo"] = m.group(1).strip() if m else None
 
     # --- Importi ------------------------------------------------------------
     for chiave, etichette in ETICHETTE.items():

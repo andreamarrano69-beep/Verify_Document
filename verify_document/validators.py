@@ -86,6 +86,50 @@ def _correggi_cf_ocr(candidato: str) -> str | None:
     return cf if valida_codice_fiscale(cf) else None
 
 
+# Caratteri che l'OCR confonde spesso tra loro (forma simile)
+_GRUPPI_SIMILI = ["MNHW", "UV", "CGO0DQ", "EF", "IL1TJ", "PRB8", "S5", "Z2", "KX", "A4", "38", "56", "17"]
+_SIMILI: dict[str, set[str]] = {}
+for _g in _GRUPPI_SIMILI:
+    for _c in _g:
+        _SIMILI.setdefault(_c, set()).update(set(_g) - {_c})
+
+
+def _nome_compatibile(cf: str, nominativo: str) -> bool:
+    """Le prime 6 lettere del CF corrispondono a cognome e nome (in qualunque ordine e divisione)?"""
+    parole = nominativo.split()
+    for k in range(1, len(parole)):
+        for cognome, nome in ((parole[:k], parole[k:]), (parole[k:], parole[:k])):
+            if cf[:3] == codice_cognome(" ".join(cognome)) and cf[3:6] == codice_nome(" ".join(nome)):
+                return True
+    return False
+
+
+def correggi_cf_letto(cf: str, nominativo: str | None = None) -> str | None:
+    """Corregge UN carattere letto male dall'OCR (es. N al posto di M) in un CF con controllo errato.
+
+    Si provano solo caratteri di forma simile e compatibili con la posizione; si accetta la correzione
+    solo se è l'unica con il carattere di controllo valido (e, se noto, coerente con nome e cognome).
+    """
+    cf = cf.upper()
+    if len(cf) != 16 or valida_codice_fiscale(cf):
+        return None
+    candidati = set()
+    for i, ch in enumerate(cf):
+        for alt in _SIMILI.get(ch, ()):
+            if i in _POSIZIONI_LETTERA and not alt.isalpha():
+                continue
+            if i not in _POSIZIONI_LETTERA and alt not in "0123456789LMNPQRSTUV":
+                continue
+            prova = cf[:i] + alt + cf[i + 1:]
+            if valida_codice_fiscale(prova):
+                candidati.add(prova)
+    if nominativo and len(nominativo.split()) >= 2:
+        coerenti = {c for c in candidati if _nome_compatibile(c, nominativo)}
+        if coerenti:
+            candidati = coerenti
+    return next(iter(candidati)) if len(candidati) == 1 else None
+
+
 def trova_codici_fiscali(testo: str) -> list[str]:
     """Codici fiscali presenti nel testo (in ordine, senza doppioni).
 

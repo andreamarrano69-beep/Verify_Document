@@ -18,6 +18,7 @@ import re
 from decimal import Decimal
 
 from .busta_paga import _trova_periodo
+from .layout import cf_corretto_ocr
 from .report import Esito, Report, cerca_importo, cerca_testo
 from .validators import trova_codici_fiscali, CF_REGEX, decodifica_codice_fiscale, formatta_euro
 
@@ -96,8 +97,10 @@ def analizza(testo: str) -> Report:
 
     # --- Pensionato --------------------------------------------------------------------
     codici = trova_codici_fiscali(testo)
-    cf = codici[0] if codici else None
+    cf, nota_cf = cf_corretto_ocr(codici[0] if codici else None, d.get("nominativo"))
     d["codice_fiscale_pensionato"] = cf
+    if nota_cf:
+        r.aggiungi("Codice fiscale corretto (OCR)", Esito.ATTENZIONE, nota_cf)
     if not cf:
         r.aggiungi("Codice fiscale pensionato", Esito.ERRORE, "Codice fiscale non trovato")
     else:

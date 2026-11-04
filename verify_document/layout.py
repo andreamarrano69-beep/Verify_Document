@@ -29,6 +29,7 @@ class Parola:
     x1: float
     top: float
     bottom: float
+    ocr: bool = False  # letta con l'OCR (scansione/foto)
 
     @property
     def altezza(self) -> float:
@@ -57,6 +58,26 @@ def contesto_parole(parole: list[Parola] | None):
 
 def parole_correnti() -> list[Parola] | None:
     return _PAROLE.get()
+
+
+def testo_da_ocr() -> bool:
+    """Vero se il documento in analisi è stato letto (anche in parte) con l'OCR."""
+    return any(p.ocr for p in (_PAROLE.get() or []))
+
+
+def cf_corretto_ocr(cf: str | None, nominativo: str | None = None) -> tuple[str | None, str | None]:
+    """Nei documenti letti con l'OCR corregge un CF con un carattere letto male. Restituisce (cf, nota)."""
+    from .validators import correggi_cf_letto, valida_codice_fiscale
+
+    if not cf or valida_codice_fiscale(cf) or not testo_da_ocr():
+        return cf, None
+    corretto = correggi_cf_letto(cf, nominativo)
+    if corretto is None:
+        return cf, None
+    diversi = ", ".join(f"«{a}»→«{b}» (posizione {i + 1})" for i, (a, b) in enumerate(zip(cf, corretto)) if a != b)
+    controllo = " e coerente con nome e cognome" if nominativo else ""
+    return corretto, (f"Letto dall'OCR come {cf}: corretto in {corretto} ({diversi}), unica correzione con "
+                      f"carattere di controllo valido{controllo}. Verificare sul documento.")
 
 
 # --- righe ---------------------------------------------------------------------------------

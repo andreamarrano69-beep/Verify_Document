@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from datetime import date
 
+from .layout import cf_corretto_ocr
 from .report import Esito, Report, cerca_testo
 from .validators import (
     trova_codici_fiscali,
@@ -65,8 +66,11 @@ def analizza(testo: str, riferimento: date | None = None) -> Report:
     d["data_rilascio"] = parse_data(cerca_testo(testo, [r"(?:data\s+(?:di\s+)?)?(?:rilascio|emissione)"], DATA) or "")
 
     codici = trova_codici_fiscali(testo)
-    cf = codici[0] if codici else None
+    nome_completo = f"{d['cognome']} {d['nome']}" if d.get("cognome") and d.get("nome") else None
+    cf, nota_cf = cf_corretto_ocr(codici[0] if codici else None, nome_completo)
     d["codice_fiscale"] = cf
+    if nota_cf:
+        r.aggiungi("Codice fiscale corretto (OCR)", Esito.ATTENZIONE, nota_cf)
 
     # --- Codice fiscale -----------------------------------------------------
     if not cf:

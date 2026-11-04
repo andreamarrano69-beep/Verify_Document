@@ -62,6 +62,7 @@ class TestBustaAColonne(unittest.TestCase):
             self.assertEqual(r.dati.get(chiave), Decimal(atteso), f"{chiave}\n--- testo letto ---\n{testo}")
         letto = f"\n--- testo letto ---\n{testo}"
         self.assertEqual(r.dati["codice_fiscale_dipendente"], "RSSMRA80A01H501U", letto)
+        self.assertEqual(r.dati["nominativo"], "ROSSI MARIO", letto)  # nome sotto l'etichetta
         self.assertEqual(r.dati["data_assunzione"].isoformat() if r.dati["data_assunzione"] else None,
                          "2019-03-01", letto)
         self.assertEqual(r.esito_globale, Esito.OK, f"{r.to_dict()['controlli']}{letto}")

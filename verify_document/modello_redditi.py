@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 from decimal import Decimal
 
+from .layout import cf_corretto_ocr
 from .report import Esito, Report, cerca_importo
 from .validators import trova_codici_fiscali, CF_REGEX, decodifica_codice_fiscale, formatta_euro
 
@@ -152,7 +153,12 @@ def analizza(testo: str) -> Report:
         d["periodo_imposta"] = anno if "periodo" in m.group(0).lower() else anno - 1
 
     codici = trova_codici_fiscali(testo)
+    cf_letto, nota_cf = cf_corretto_ocr(codici[0] if codici else None)
+    if codici:
+        codici[0] = cf_letto
     d["codice_fiscale_contribuente"] = codici[0] if codici else None
+    if nota_cf:
+        r.aggiungi("Codice fiscale corretto (OCR)", Esito.ATTENZIONE, nota_cf)
     if codici:
         info = decodifica_codice_fiscale(codici[0])
         r.aggiungi("Codice fiscale contribuente", Esito.OK if info.valido else Esito.ERRORE,

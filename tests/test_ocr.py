@@ -58,6 +58,38 @@ class TestCodiceFiscaleOcr(unittest.TestCase):
         self.assertEqual(trova_codici_fiscali("ABCDEFGHIJKLMNOP"), [])  # 16 lettere qualsiasi: niente
 
 
+class TestCodiceFiscaleLetteraSbagliata(unittest.TestCase):
+    BUSTA = (ESEMPI / "busta_paga_esempio.txt").read_text(encoding="utf-8").replace("RSSMRA80A01H501U", "RSSNRA80A01H501U")
+
+    def test_correzione_lettere_simili(self):
+        from verify_document.validators import correggi_cf_letto
+
+        self.assertEqual(correggi_cf_letto("RSSNRA80A01H501U", "ROSSI MARIO"), "RSSMRA80A01H501U")  # N/M
+        self.assertEqual(correggi_cf_letto("RSSMRA80A01H501V", "ROSSI MARIO"), "RSSMRA80A01H501U")  # V/U
+        self.assertIsNone(correggi_cf_letto("RSSMRA8OA01N501U"))  # due errori: non si indovina
+        self.assertIsNone(correggi_cf_letto("RSSMRA80A01H501U"))  # già valido
+
+    def test_scansione_corretta_con_avviso(self):
+        from verify_document import busta_paga
+        from verify_document.layout import Parola, contesto_parole
+
+        with contesto_parole([Parola("x", 0, 1, 0, 1, ocr=True)]):
+            r = busta_paga.analizza(self.BUSTA)
+        k = {c.nome: c for c in r.controlli}
+        self.assertEqual(r.dati["codice_fiscale_dipendente"], "RSSMRA80A01H501U")
+        self.assertEqual(k["Codice fiscale corretto (OCR)"].esito, Esito.ATTENZIONE)
+        self.assertIn("«N»→«M»", k["Codice fiscale corretto (OCR)"].dettaglio)
+        self.assertEqual(k["Codice fiscale dipendente"].esito, Esito.OK)
+
+    def test_pdf_nativo_resta_errore(self):
+        from verify_document import busta_paga
+
+        r = busta_paga.analizza(self.BUSTA)  # testo non da OCR: un CF sbagliato è un errore vero
+        k = {c.nome: c for c in r.controlli}
+        self.assertEqual(k["Codice fiscale dipendente"].esito, Esito.ERRORE)
+        self.assertNotIn("Codice fiscale corretto (OCR)", k)
+
+
 class TestSenzaTesseract(unittest.TestCase):
     def test_messaggio_con_istruzioni(self):
         with tempfile.TemporaryDirectory() as tmp, \

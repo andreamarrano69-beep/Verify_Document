@@ -42,7 +42,8 @@ l'OCR **Tesseract**:
 - **da Python**: installare Tesseract da <https://github.com/UB-Mannheim/tesseract/wiki>
   (durante l'installazione selezionare la lingua **Italian**). Il programma lo trova da solo anche se non è nel PATH.
 
-La barra in basso dell'interfaccia indica se l'OCR è attivo. Gli errori tipici dell'OCR sui numeri
+La barra in basso dell'interfaccia indica se l'OCR è attivo. Se non lo è, il comando
+`python -m verify_document.diagnosi` spiega cosa manca (libreria pytesseract, Tesseract, lingua italiana). Gli errori tipici dell'OCR sui numeri
 (O al posto di 0, l al posto di 1, spazi dentro gli importi) vengono corretti automaticamente.
 Per i documenti scansionati i controlli di autenticità del file sono limitati: se possibile chiedere il PDF originale.
 

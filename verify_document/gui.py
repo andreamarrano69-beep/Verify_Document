@@ -331,7 +331,7 @@ class App:
                                "e foto. Tutti i documenti vengono elaborati in locale.")
         else:
             self.var_stato.set("Pronto. OCR non disponibile: scansioni e foto non si possono leggere "
-                               "(installa Tesseract). Tutti i documenti vengono elaborati in locale.")
+                               "(installa Tesseract; diagnosi: python -m verify_document.diagnosi).")
 
     def _controlla_coda(self) -> None:
         try:

@@ -20,7 +20,8 @@ ISTRUZIONI_TESSERACT = (
     "Questo documento è una scansione o una foto: per leggerlo serve l'OCR (Tesseract).\n"
     "• Programma .exe: usa la versione più recente, che include già Tesseract.\n"
     "• Da Python: installa Tesseract da https://github.com/UB-Mannheim/tesseract/wiki "
-    "(seleziona la lingua «Italian» durante l'installazione), poi riapri il programma."
+    "(seleziona la lingua «Italian» durante l'installazione), poi riapri il programma.\n"
+    "• Per capire cosa manca: python -m verify_document.diagnosi"
 )
 
 # Opzioni di Tesseract: --psm 6 legge la pagina come un blocco unico di righe, così etichetta e

@@ -45,26 +45,41 @@ SCAGLIONI_IRPEF = {
 }
 
 ETICHETTE = {
+    # punti 1-3: si cerca prima la riga con "(indeterminato)" perché la descrizione va spesso a capo
     "reddito_indeterminato": [
-        r"redditi\s+di\s+lavoro\s+dipendente\s+e\s+assimilati[^\n]{0,40}indeterminato",
+        r"assimilati\s*\(?\s*(?:tempo\s+)?indeterminato",
+        r"redditi\s+di\s+lavoro\s+dipendente\s+ed?\s+assimilati[^\n]{0,40}indeterminato",
         r"(?:punto\s+)?\b1\b[\s.)-]+redditi\s+di\s+lavoro\s+dipendente",
         r"tempo\s+indeterminato",
+        r"\bindeterminato\b",  # riserva: descrizione letta male dall'OCR ("sasimiat (indeterminato)")
     ],
     "reddito_determinato": [
-        r"redditi\s+di\s+lavoro\s+dipendente\s+e\s+assimilati[^\n]{0,40}(?<!in)determinato",
+        r"assimilati\s*\(?\s*(?:tempo\s+)?(?<!in)determinato",
+        r"redditi\s+di\s+lavoro\s+dipendente\s+ed?\s+assimilati[^\n]{0,40}(?<!in)determinato",
         r"(?<!in)\btempo\s+determinato",
+        r"(?<![A-Za-z])determinato\b",
     ],
     "reddito_pensione": [r"redditi\s+di\s+pensione"],
-    "giorni_lavoro": [r"(?:numero\s+(?:di\s+)?)?giorni\s+(?:di\s+)?lavoro\s+dipendente", r"giorni\s+lavorati"],
-    "giorni_pensione": [r"(?:numero\s+(?:di\s+)?)?giorni\s+(?:di\s+)?pensione"],
-    # NB: anche "redditi di pensione" (punto 3) è letto da reddito_pensione
+    "giorni_lavoro": [r"(?:numero\s+(?:di\s+)?)?giorni\s+(?:di\s+)?lavoro\s+dipendente", r"giorni\s+lavorati",
+                      r"(?:detrazioni|giorni)\s*[-–]?\s*lavoro\s+dipendente"],
+    "giorni_pensione": [r"(?:numero\s+(?:di\s+)?)?giorni\s+(?:di\s+)?pensione", r"(?:detrazioni|giorni)\s*[-–]?\s*pensione"],
     "ritenute_irpef": [r"ritenute\s+irpef", r"ritenute\s+d['’]acconto\s+irpef"],
-    "addizionale_regionale": [r"addizionale\s+regionale(?:\s+all['’]\s*irpef)?(?!\s+sospes)"],
-    "addizionale_comunale_saldo": [r"saldo\s+addizionale\s+comunale", r"addizionale\s+comunale[^\n]{0,30}saldo"],
-    "addizionale_comunale_acconto": [r"acconto\s+addizionale\s+comunale",
+    "addizionale_regionale": [r"addizionale\s+regionale(?:\s+all['’]\s*irpef)?(?!\s+sospes)",
+                              r"addizionale\s+regionale"],  # forma semplice: ricerca approssimata (OCR)
+    "addizionale_comunale_saldo": [r"saldo(?:\s+\d{4})?\s+addizionale(?:\s+comunale)?",
+                                   r"addizionale\s+comunale[^\n]{0,30}saldo"],
+    "addizionale_comunale_acconto": [r"acconto(?:\s+\d{4})?\s+addizionale(?:\s+comunale)?",
                                      r"addizionale\s+comunale[^\n]{0,30}acconto"],
-    "imponibile_previdenziale": [r"imponibile\s+previdenziale"],
+    # detrazioni e crediti (punti 361 e seguenti)
+    "imposta_lorda": [r"imposta\s+lorda"],
+    "detrazioni_familiari": [r"detrazioni\s+per\s+carichi(?:\s+di\s+famiglia)?"],
+    "detrazioni_lavoro": [r"detrazioni\s+per\s+redditi(?:\s+di)?", r"detrazioni\s+(?:per\s+)?lavoro\s+dipendente"],
+    "totale_detrazioni": [r"totale\s+detrazioni", r"totale\s+detraz\w*"],
+    "trattamento_integrativo": [r"trattamento\s+integrativo(?:\s+erogato)?"],
+    # dati previdenziali INPS
+    "imponibile_previdenziale": [r"imponibile\s+previdenziale", r"\w*ponib\w*\s+previdenziale"],
     "contributi_lavoratore": [r"contributi\s+a\s+carico\s+del\s+lavoratore(?:\s+trattenuti)?",
+                              r"contributi\s+a\s+carico\s+del(?!\s+datore)",
                               r"contributi\s+(?:inps\s+)?(?:a\s+carico\s+)?(?:del\s+)?dipendente"],
 }
 
@@ -237,6 +252,58 @@ def analizza(testo: str) -> Report:
         r.aggiungi("Ritenute IRPEF", Esito.OK,
                    f"{formatta_euro(rit)} (aliquota media {str(aliquota).replace('.', ',')}%), entro l'IRPEF lorda teorica "
                    f"{formatta_euro(lorda)}; differenza = detrazioni {formatta_euro(lorda - rit)}")
+
+    # --- Imposta lorda e detrazioni (punti 361 e seguenti) ---------------------------------------
+    lorda_cu, detr = d["imposta_lorda"], d["totale_detrazioni"]
+    if lorda_cu is not None and lorda is not None:
+        diff = abs(lorda_cu - lorda)
+        if diff <= 1:
+            r.aggiungi("Imposta lorda", Esito.OK,
+                       f"{formatta_euro(lorda_cu)} = IRPEF sul reddito di {formatta_euro(reddito)} con gli scaglioni {anno}")
+        elif diff <= lorda * Decimal("0.02") + 1:
+            r.aggiungi("Imposta lorda", Esito.ATTENZIONE,
+                       f"{formatta_euro(lorda_cu)} indicata, calcolata {formatta_euro(lorda)} (piccola differenza: "
+                       "redditi di altri sostituti o oneri deducibili?)")
+        else:
+            r.aggiungi("Imposta lorda", Esito.ERRORE,
+                       f"{formatta_euro(lorda_cu)} indicata, ma l'IRPEF sul reddito di {formatta_euro(reddito)} "
+                       f"con gli scaglioni {anno} è {formatta_euro(lorda)}")
+    parziali = [d[k] for k in ("detrazioni_familiari", "detrazioni_lavoro") if d[k] is not None]
+    if detr is not None and parziali and sum(parziali) > detr + 1:
+        r.aggiungi("Totale detrazioni", Esito.ERRORE,
+                   f"Totale {formatta_euro(detr)} inferiore alla somma delle singole detrazioni "
+                   f"{formatta_euro(sum(parziali))}")
+    if rit is not None and detr is not None and (lorda_cu or lorda):
+        base = lorda_cu if lorda_cu is not None else lorda
+        attesa = max(base - detr, Decimal(0))
+        diff = abs(attesa - rit)
+        testo = (f"Imposta lorda {formatta_euro(base)} − detrazioni {formatta_euro(detr)} = {formatta_euro(attesa)}, "
+                 f"ritenute {formatta_euro(rit)}")
+        if diff <= 1:
+            r.aggiungi("Imposta netta = ritenute", Esito.OK, testo)
+        else:
+            r.aggiungi("Imposta netta = ritenute", Esito.ATTENZIONE,
+                       testo + f" (differenza {formatta_euro(diff)}: conguagli, crediti o altri redditi?)")
+    ti = d["trattamento_integrativo"]
+    if ti and reddito > 28000:
+        r.aggiungi("Trattamento integrativo", Esito.ATTENZIONE,
+                   f"{formatta_euro(ti)} erogati con reddito di {formatta_euro(reddito)} (spetta di norma fino a 28.000 €)")
+
+    # --- Addizionali ---------------------------------------------------------------------------
+    if d["addizionale_regionale"] is not None and reddito > 0:
+        perc = (d["addizionale_regionale"] / reddito * 100).quantize(Decimal("0.01"))
+        esito = Esito.OK if Decimal("1.18") <= perc <= Decimal("3.38") else Esito.ATTENZIONE
+        r.aggiungi("Addizionale regionale", esito,
+                   f"{formatta_euro(d['addizionale_regionale'])} = {str(perc).replace('.', ',')}% del reddito"
+                   + ("" if esito == Esito.OK else " (fuori dall'intervallo 1,23%–3,33%)"))
+    comunale = (d["addizionale_comunale_saldo"] or 0) + (d["addizionale_comunale_acconto"] or 0)
+    if comunale and reddito > 0:
+        perc = (Decimal(comunale) / reddito * 100).quantize(Decimal("0.01"))
+        # saldo dell'anno + acconto (30%) dell'anno dopo: al massimo circa 0,8% × 1,3
+        esito = Esito.OK if perc <= Decimal("1.20") else Esito.ATTENZIONE
+        r.aggiungi("Addizionale comunale", esito,
+                   f"saldo + acconto {formatta_euro(comunale)} = {str(perc).replace('.', ',')}% del reddito"
+                   + ("" if esito == Esito.OK else " (troppo alta rispetto all'aliquota massima 0,8%)"))
 
     # --- INPS --------------------------------------------------------------------------
     imp, contr = d["imponibile_previdenziale"], d["contributi_lavoratore"]

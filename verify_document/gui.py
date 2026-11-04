@@ -225,6 +225,23 @@ class App:
                         else "Usa «Apri documenti…» per aggiungere file")
         suggerimento += "  ·  F11 schermo intero  ·  Ctrl+Q esci"
         ttk.Label(sx, text=suggerimento, foreground="#666").pack(anchor="w", pady=4)
+
+        # Fascicolo cliente: documenti presenti, da aggiungere, esito dei controlli incrociati
+        intestazione_f = ttk.Frame(sx)
+        intestazione_f.pack(fill="x", pady=(6, 2))
+        ttk.Label(intestazione_f, text="Fascicolo cliente", style="Titolo.TLabel").pack(side="left")
+        ttk.Button(intestazione_f, text="⇄  Confronto completo", command=self.confronta).pack(side="right")
+        self.txt_fascicolo = tk.Text(sx, height=10, wrap="word", font=("Segoe UI", 9), relief="flat",
+                                     background="#f4f6f8", padx=8, pady=6, cursor="arrow")
+        self.txt_fascicolo.pack(fill="x")
+        for tag, opzioni in {"cliente": {"font": ("Segoe UI", 10, "bold")},
+                             "presente": {"foreground": "#1e7b34"},
+                             "manca": {"foreground": "#8a5a00"},
+                             "nota": {"foreground": "#666666"},
+                             **{e.value: {"foreground": COLORI[e][0], "font": ("Segoe UI", 9, "bold")} for e in COLORI}
+                             }.items():
+            self.txt_fascicolo.tag_configure(tag, **opzioni)
+        self.aggiorna_fascicolo()
         corpo.add(sx, weight=1)
 
         # Colonna destra: dettaglio
@@ -428,6 +445,7 @@ class App:
                 if nuovi:
                     stato += f" {nuovi} salvati nell'archivio documenti."
                 self.var_stato.set(stato)
+            self.aggiorna_fascicolo()
         elif self.in_corso <= 0:
             self.in_corso = 0
             self.progress.stop()
@@ -591,6 +609,33 @@ class App:
             freccia = (" ▼" if decrescente else " ▲") if col == colonna else ""
             self.lista.heading(col, text=titolo + freccia)
 
+    def aggiorna_fascicolo(self) -> None:
+        """Riepilogo per cliente: documenti presenti, cosa aggiungere per altri controlli, esito incrociato."""
+        from .confronto import fascicolo
+
+        t = self.txt_fascicolo
+        t.configure(state="normal")
+        t.delete("1.0", "end")
+        schede = fascicolo(self._validi()) if not self.in_corso else []
+        if not schede:
+            t.insert("end", "Apri i documenti di un cliente (buste paga, CU, Modello Redditi, cedolini di pensione, "
+                            "documento d'identità): qui vedrai quali controlli incrociati sono possibili e quali "
+                            "documenti aggiungere.", "nota")
+        for i, s in enumerate(schede):
+            if i:
+                t.insert("end", "\n")
+            t.insert("end", f"{s.nominativo or 'Cliente'}  ·  {s.codice_fiscale}\n", "cliente")
+            for voce in s.presenti:
+                t.insert("end", f"✔ {voce}\n", "presente")
+            if s.esito is not None:
+                testo = {Esito.OK: "tutti coerenti", Esito.ATTENZIONE: f"{s.da_verificare} da verificare",
+                         Esito.ERRORE: f"{s.da_verificare} da verificare (anomalie)"}[s.esito]
+                t.insert("end", "Controlli incrociati: ", "nota")
+                t.insert("end", f"{SIMBOLI[s.esito]} {s.esito.value} – {testo}\n", s.esito.value)
+            for voce in s.suggerimenti:
+                t.insert("end", f"+ Aggiungi {voce[0].lower()}{voce[1:]}\n", "manca")
+        t.configure(state="disabled")
+
     def rimuovi_selezionato(self, elimina_copia: bool = False) -> None:
         sel = self.lista.selection()
         if not sel:
@@ -624,6 +669,7 @@ class App:
             self.lista.selection_set(figli[0])
         else:
             self.mostra_selezionato()
+        self.aggiorna_fascicolo()
 
     def _apri_selezionato(self, cartella: bool) -> None:
         sel = self.lista.selection()
@@ -641,6 +687,7 @@ class App:
         self.lista.delete(*self.lista.get_children())
         self.risultati.clear()
         self.chiavi_data.clear()
+        self.aggiorna_fascicolo()
         self.lbl_titolo.config(text="Nessun documento selezionato")
         self.lbl_esito.config(text="", bg=self.root.cget("bg"))
         self.mostra_selezionato()

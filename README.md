@@ -6,7 +6,7 @@ Programma Python **locale** (nessun dato inviato su internet) che legge e verifi
 |---|---|---|
 | **Busta paga** | P.IVA azienda, CF dipendente, data assunzione, periodo, competenze, trattenute, netto, imponibili, contributi, IRPEF | P.IVA e CF validi (cifra di controllo), netto = competenze − trattenute ± arrotondamenti, aliquota INPS (9,19% / 9,49% / 5,84%), imponibile fiscale = previdenziale − contributi, IRPEF netta ≤ lorda, assunzione coerente con periodo ed età |
 | **Modello Redditi PF (ex Unico)** | Quadri compilati, regime fiscale, redditi dei quadri, imponibile, imposte, ritenute, acconti, cedolare secca, addizionali | Regime (forfettario, semplificato, ordinario, professionista, dipendente), reddito **mensile** lordo e netto; **catena del quadro RN** (complessivo = somma dei quadri, imponibile = complessivo − deduzioni, imposta lorda = IRPEF a scaglioni dell'anno, netta = lorda − detrazioni, saldo = netta − ritenute − acconti); quadro RE (compensi − spese) e RG (ricavi − costi); cedolare 10/21/26%; addizionali entro i limiti; forfettario: soglia 85.000 €, coefficiente di redditività, aliquota 5%/15% |
-| **Certificazione Unica (CU)** | Datore di lavoro (sostituto d'imposta), dipendente, anno, redditi, giorni lavorati, ritenute IRPEF, addizionali, imponibile e contributi INPS, data inizio rapporto | CF e P.IVA validi, giorni ≤ giorni dell'anno, ritenute IRPEF ≤ IRPEF lorda calcolata con gli scaglioni dell'anno, aliquota INPS, reddito ≈ imponibile INPS − contributi, reddito **mensile** lordo e netto |
+| **Certificazione Unica (CU)** | Sostituto d'imposta, dipendente, anno, redditi (punti 1-3), giorni, data inizio rapporto, ritenute IRPEF, addizionali, **imposta lorda, detrazioni, trattamento integrativo**, imponibile e contributi INPS — anche dalle **caselle numerate** con descrizione su più righe e importo sotto | CF e P.IVA validi, giorni, **imposta lorda = IRPEF a scaglioni**, **imposta lorda − detrazioni = ritenute**, totale detrazioni, addizionali regionale/comunale entro i limiti, trattamento integrativo, aliquota INPS, reddito ≈ imponibile INPS − contributi, reddito **mensile** lordo e netto |
 | **Pensione** (cedolino INPS o di altre casse, certificato ObisM) | Pensionato, ente, categoria (VO, IO, SO, AS…), numero pensione, rata, lordo, IRPEF, addizionali, **cessione del quinto, prestiti, pignoramenti**, netto | CF valido ed età coerente con la categoria, netto = lordo − trattenute, IRPEF del mese entro il massimo possibile, prestazioni assistenziali (assegno sociale, invalidità civile) segnalate, importo mensile e annuo (13 mensilità) |
 | **Documento d'identità** (CIE, carta, patente, passaporto, tessera sanitaria) | Cognome, nome, nascita, sesso, numero, rilascio, scadenza, CF | CF valido e coerente con cognome/nome/data/sesso, documento scaduto o in scadenza |
 
@@ -112,6 +112,17 @@ Oltre a verificare che i calcoli tornino, il programma esamina il file PDF e ass
 
 > Nessun controllo automatico può **certificare** l'originalità: lo strumento segnala anomalie
 > che un operatore deve valutare. Un indice basso non garantisce che il documento sia autentico.
+
+## Fascicolo cliente
+
+Sotto l'elenco dei documenti il riquadro **Fascicolo cliente** mostra, per ogni cliente (codice fiscale):
+
+- i documenti presenti (documento d'identità, buste paga con il periodo, CU, Modello Redditi, pensione)
+- l'esito dei **controlli incrociati**, eseguiti automaticamente appena ci sono almeno 2 documenti
+- **cosa aggiungere** per fare altri controlli, ad esempio «CU 2026 (redditi 2025): per verificare reddito
+  annuo e IRPEF delle buste paga 2025» oppure «Buste paga 2025 (ideale dicembre): per verificare la CU»
+
+**⇄ Confronto completo** apre il dettaglio di tutti i controlli incrociati.
 
 ## Confronto tra documenti dello stesso cliente
 

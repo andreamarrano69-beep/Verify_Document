@@ -619,3 +619,110 @@ def confronto_testuale(c: EsitoConfronto) -> str:
                              f"{nl:>13}{formatta_euro(t['progressivo_imponibile_fiscale']):>16}")
     righe += ["", f"ESITO CONFRONTO: {SIMBOLI[r.esito_globale]} {r.esito_globale.value}", ""]
     return "\n".join(righe)
+
+
+# --- Fascicolo cliente: documenti presenti, mancanti e controlli incrociati -------------------------
+
+@dataclass
+class SchedaFascicolo:
+    codice_fiscale: str
+    nominativo: str | None
+    presenti: list[str]            # "Buste paga: 3 (Agosto 2026 – Ottobre 2026)"
+    suggerimenti: list[str]        # documenti da aggiungere per fare più controlli
+    esito: Esito | None            # esito dei controlli incrociati per questo cliente
+    da_verificare: int             # controlli incrociati in attenzione/errore
+
+
+def _anni(documenti: list[Documento], chiave: str) -> list[int]:
+    return sorted({d.report.dati[chiave] for d in documenti if d.report.dati.get(chiave)})
+
+
+def fascicolo(documenti: list[tuple[str, Report]], anno_corrente: int | None = None) -> list[SchedaFascicolo]:
+    from datetime import date
+
+    from .busta_paga import MESI
+
+    anno_corrente = anno_corrente or date.today().year
+    docs = [Documento(n, r) for n, r in documenti if r is not None]
+    esito_confronto = confronta(documenti) if len(docs) >= 2 else None
+    persone: dict[str, list[Documento]] = {}
+    for d in docs:
+        if d.codice_fiscale:
+            persone.setdefault(d.codice_fiscale, []).append(d)
+
+    schede = []
+    for cf, ds in persone.items():
+        buste = [d for d in ds if d.tipo == "busta"]
+        cu = [d for d in ds if d.tipo == "cu"]
+        redditi = [d for d in ds if d.tipo == "redditi"]
+        pensioni = [d for d in ds if d.tipo == "pensione"]
+        identita = [d for d in ds if d.tipo == "anagrafica"]
+        nominativo = next((f"{d.report.dati['cognome']} {d.report.dati['nome']}" for d in identita
+                           if d.report.dati.get("cognome") and d.report.dati.get("nome")), None) \
+            or next((d.report.dati.get("nominativo") for d in ds if d.report.dati.get("nominativo")), None)
+
+        presenti, suggerimenti = [], []
+        if identita:
+            presenti.append(f"Documento d'identità ({identita[0].report.tipo_documento})")
+        else:
+            suggerimenti.append("Documento d'identità: per verificare che il codice fiscale sia del cliente")
+
+        mesi_buste = sorted(b.anno_mese for b in buste if b.anno_mese)
+        anni_buste = sorted({a for a, _ in mesi_buste})
+        if buste:
+            intervallo = ""
+            if mesi_buste:
+                primo, ultimo = mesi_buste[0], mesi_buste[-1]
+                intervallo = f" ({MESI[primo[1] - 1].capitalize()} {primo[0]}" + (
+                    f" – {MESI[ultimo[1] - 1].capitalize()} {ultimo[0]})" if primo != ultimo else ")")
+            presenti.append(f"Buste paga: {len(buste)}{intervallo}")
+            if len(buste) < 3:
+                suggerimenti.append("Altre buste paga (almeno 3 mesi consecutivi): per verificare progressivi, "
+                                    "arrotondamenti e andamento del netto")
+        anni_cu = _anni(cu, "periodo_imposta")
+        if cu:
+            presenti.append("CU: redditi " + ", ".join(map(str, anni_cu)) if anni_cu else "CU")
+        anni_redditi = _anni(redditi, "periodo_imposta")
+        if redditi:
+            presenti.append("Modello Redditi: anno " + ", ".join(map(str, anni_redditi)) if anni_redditi
+                            else "Modello Redditi")
+        if pensioni:
+            presenti.append(f"Documenti di pensione: {len(pensioni)}")
+
+        for anno in anni_buste:
+            if anno < anno_corrente and anno not in anni_cu:
+                suggerimenti.append(f"CU {anno + 1} (redditi {anno}): per verificare reddito annuo e IRPEF "
+                                    f"delle buste paga {anno}")
+        if buste and not cu and all(a >= anno_corrente for a in anni_buste):
+            suggerimenti.append(f"CU {anno_corrente} (redditi {anno_corrente - 1}): per verificare la continuità "
+                                "del rapporto e il reddito dell'anno precedente")
+        for d in cu:
+            anno = d.report.dati.get("periodo_imposta")
+            if not anno:
+                continue
+            if d.report.dati.get("reddito_lavoro_dipendente") and anno not in anni_buste:
+                suggerimenti.append(f"Buste paga {anno} (ideale dicembre, con i progressivi annui): "
+                                    f"per verificare la CU redditi {anno}")
+            if d.report.dati.get("reddito_pensione") and not pensioni:
+                suggerimenti.append(f"Cedolino della pensione {anno}: per verificare il reddito di pensione della CU")
+        for d in redditi:
+            anno = d.report.dati.get("periodo_imposta")
+            dip = d.report.dati.get("reddito_dipendente") or d.report.dati.get("reddito_pensione")
+            if anno and dip and anno not in anni_cu:
+                suggerimenti.append(f"CU {anno + 1} (redditi {anno}): per verificare il reddito da lavoro "
+                                    f"dipendente/pensione dichiarato nel Modello Redditi {anno}")
+        if pensioni and not cu:
+            suggerimenti.append("CU della pensione: per verificare l'importo annuo dei cedolini")
+
+        esito, da_verificare = None, 0
+        if esito_confronto is not None:
+            controlli = [c for c in esito_confronto.report.controlli if c.gruppo == f"Cliente {cf}"
+                         and c.esito != Esito.INFO]
+            if controlli:
+                da_verificare = sum(1 for c in controlli if c.esito in (Esito.ATTENZIONE, Esito.ERRORE))
+                esiti = {c.esito for c in controlli}
+                esito = Esito.ERRORE if Esito.ERRORE in esiti else Esito.ATTENZIONE if Esito.ATTENZIONE in esiti \
+                    else Esito.OK
+        schede.append(SchedaFascicolo(cf, nominativo, presenti, list(dict.fromkeys(suggerimenti)),
+                                      esito, da_verificare))
+    return schede

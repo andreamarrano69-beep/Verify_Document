@@ -92,3 +92,90 @@ def scansione(pdf: Path, uscita: Path, dpi: int = 200, angolo: float = -2.0, sem
     with Image.open(jpg) as j:
         j.save(uscita, resolution=dpi)
     return uscita
+
+
+CU_ATTESI = {
+    "reddito_indeterminato": "25381.33", "giorni_lavoro": 365, "ritenute_irpef": "4161.95",
+    "addizionale_regionale": "380.00", "addizionale_comunale_saldo": "95.00",
+    "addizionale_comunale_acconto": "55.00", "imposta_lorda": "5837.71", "totale_detrazioni": "1675.76",
+    "imponibile_previdenziale": "27950.00", "contributi_lavoratore": "2568.67",
+}
+
+
+def cu_a_caselle(percorso: Path, sostituzioni: dict | None = None) -> Path:
+    """CU con caselle numerate: numero e descrizione in alto (anche su due righe), importo in basso a destra.
+
+    ``sostituzioni``: {valore originale: valore alterato}, per simulare una CU modificata."""
+    sostituzioni = sostituzioni or {}
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(str(percorso), pagesize=A4)
+    _, altezza = A4
+
+    def casella(x, y, w, h, numero, descrizione, valore=""):
+        c.setLineWidth(0.6)
+        c.rect(x, y, w, h)
+        c.setFont("Helvetica-Bold", 6)
+        c.drawString(x + 2, y + h - 7, str(numero))
+        c.setFont("Helvetica", 5.5)
+        for i, riga in enumerate(descrizione.split("\n")):
+            c.drawString(x + 2 + (8 if i == 0 else 0), y + h - 7 - 6.5 * i, riga)
+        valore = sostituzioni.get(valore, valore)
+        if valore:
+            c.setFont("Courier-Bold", 9)
+            c.drawRightString(x + w - 3, y + 4, valore)
+
+    def titolo(y, testo):
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(30, y, testo)
+
+    c.setFont("Helvetica-Bold", 13)
+    c.drawString(30, altezza - 40, "CERTIFICAZIONE UNICA 2026")
+    c.setFont("Helvetica", 7)
+    c.drawString(30, altezza - 52, "CERTIFICAZIONE LAVORO DIPENDENTE, ASSIMILATI ED ASSISTENZA FISCALE - Periodo d'imposta 2025")
+    titolo(altezza - 75, "DATI RELATIVI AL SOSTITUTO D'IMPOSTA")
+    y = altezza - 105
+    casella(30, y, 160, 26, 1, "Codice fiscale", "12345678903")
+    casella(190, y, 375, 26, 2, "Cognome o Denominazione", "ESEMPIO SRL")
+    titolo(y - 15, "DATI RELATIVI AL DIPENDENTE, PENSIONATO O ALTRO PERCETTORE DELLE SOMME")
+    y -= 45
+    casella(30, y, 160, 26, 1, "Codice fiscale", "RSSMRA80A01H501U")
+    casella(190, y, 190, 26, 2, "Cognome", "ROSSI")
+    casella(380, y, 185, 26, 3, "Nome", "MARIO")
+    titolo(y - 15, "DATI FISCALI")
+    w = 535 / 4
+    y -= 50
+    for i, (n, d, v) in enumerate([(1, "Redditi di lavoro dipendente ed\nassimilati (indeterminato)", "25.381,33"),
+                                   (2, "Redditi di lavoro dipendente ed\nassimilati (determinato)", ""),
+                                   (3, "Redditi di pensione", ""),
+                                   (6, "Numero di giorni per i quali spettano\nle detrazioni - Lavoro dipendente", "365")]):
+        casella(30 + i * w, y, w, 32, n, d, v)
+    y -= 32
+    for i, (n, d, v) in enumerate([(7, "Numero di giorni - Pensione", ""), (8, "Data inizio rapporto", "01/03/2019"),
+                                   (9, "Data cessazione rapporto", ""), (10, "In forza al 31/12", "X")]):
+        casella(30 + i * w, y, w, 26, n, d, v)
+    y -= 32
+    for i, (n, d, v) in enumerate([(21, "Ritenute Irpef", "4.161,95"),
+                                   (22, "Addizionale regionale\nall'Irpef", "380,00"),
+                                   (26, "Saldo 2025 addizionale\ncomunale all'Irpef", "95,00"),
+                                   (29, "Acconto 2026 addizionale\ncomunale all'Irpef", "55,00")]):
+        casella(30 + i * w, y, w, 32, n, d, v)
+    titolo(y - 15, "DETRAZIONI E CREDITI")
+    y -= 50
+    for i, (n, d, v) in enumerate([(361, "Imposta lorda", "5.837,71"),
+                                   (362, "Detrazioni per carichi\ndi famiglia", ""),
+                                   (367, "Detrazioni per redditi di\nlavoro dipendente", "1.675,76"),
+                                   (373, "Totale detrazioni", "1.675,76")]):
+        casella(30 + i * w, y, w, 32, n, d, v)
+    y -= 32
+    casella(30, y, w, 26, 392, "Trattamento integrativo erogato", "")
+    titolo(y - 15, "DATI PREVIDENZIALI E ASSISTENZIALI INPS")
+    y -= 50
+    w3 = 535 / 3
+    for i, (n, d, v) in enumerate([(1, "Matricola azienda", "1234567890"),
+                                   (4, "Imponibile previdenziale", "27.950,00"),
+                                   (5, "Contributi a carico del\nlavoratore trattenuti", "2.568,67")]):
+        casella(30 + i * w3, y, w3, 32, n, d, v)
+    c.save()
+    return percorso

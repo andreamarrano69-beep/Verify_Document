@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -26,6 +27,7 @@ ANALIZZATORI = {
 
 
 def riconosci_tipo(testo: str) -> str:
+    testo = re.sub(r"[ \t]+", " ", testo)  # l'OCR mette spazi multipli tra le parole
     punteggi = {nome: mod.riconosci(testo) for nome, mod in ANALIZZATORI.items()}
     migliore = max(punteggi, key=punteggi.get)
     if punteggi[migliore] == 0:

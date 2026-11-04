@@ -180,6 +180,12 @@ class _Corrispondenza:
         return self._f
 
 
+def _numero_di_casella(testo: str, match) -> bool:
+    """Un intero senza decimali seguito subito da una descrizione è il numero di una casella ("8 Data inizio")."""
+    valore = match.group(0)
+    return not re.search(r"[.,]", valore) and bool(re.match(r"\s*[A-Za-zÀ-ÿ]{3,}", testo[match.end():]))
+
+
 _PAROLA_ETICHETTA = re.compile(r"[A-Za-zÀ-ÿ]{3,}")
 _IGNORA_TRA = re.compile(r"\b(?:EUR|euro)\b", re.IGNORECASE)
 
@@ -239,7 +245,8 @@ def cerca_valore(etichetta: str, valore: str, parole: list[Parola] | None = None
             if mv:
                 tra = _IGNORA_TRA.sub("", resto[:mv.start()])
                 gap = _x_di(m.end() + mv.start(), mappa) - x1
-                if not _PAROLA_ETICHETTA.search(tra) and (numerico or ":" in tra or gap < 2.5 * h):
+                if not _PAROLA_ETICHETTA.search(tra) and (numerico or ":" in tra or gap < 2.5 * h) \
+                        and not _numero_di_casella(resto, mv):
                     return True, estrai(mv)
 
             # 2. cella sotto: tra l'inizio dell'etichetta e il campo successivo della stessa riga
@@ -248,8 +255,9 @@ def cerca_valore(etichetta: str, valore: str, parole: list[Parola] | None = None
             # il valore sta nella cella che comincia con l'etichetta: si guarda il centro del valore, così un
             # importo allineato a destra nella cella precedente non viene attribuito a questa
             sinistra = x0 - 0.5 * h
-            for riga_sotto in righe[i + 1:i + 1 + righe_sotto]:
-                if min(p.top for p in riga_sotto) > bottom + 4.5 * h:
+            fondo, continuazioni = bottom, 0
+            for riga_sotto in righe[i + 1:i + 1 + righe_sotto + 2]:
+                if min(p.top for p in riga_sotto) > fondo + 4.5 * h:
                     break
                 cella = [p for p in riga_sotto if sinistra <= p.cx <= destra]
                 if not cella:
@@ -259,7 +267,18 @@ def cerca_valore(etichetta: str, valore: str, parole: list[Parola] | None = None
                 # si guarda solo la prima riga con qualcosa in questa colonna, e il valore deve venire prima
                 # di qualsiasi altra etichetta (altrimenti è il valore di un altro campo)
                 if mv and not _PAROLA_ETICHETTA.search(_IGNORA_TRA.sub("", testo_cella[:mv.start()])) \
-                        and not _ha_etichetta_propria(cella, riga_sotto, h):
+                        and not _ha_etichetta_propria(cella, riga_sotto, h) and not _numero_di_casella(testo_cella, mv):
                     return True, estrai(mv)
+                # descrizione che va a capo nella stessa casella ("Redditi di lavoro dipendente ed /
+                # assimilati (indeterminato)"): solo parole, allineata, subito sotto -> si scende ancora
+                if continuazioni < 2 and not mv and not re.search(r"\d", testo_cella) \
+                        and abs(cella[0].x0 - x0) <= 3 * h and min(p.top for p in cella) - fondo <= 1.5 * h:
+                    continuazioni += 1
+                    fondo = max(p.bottom for p in cella)
+                    continue
+                # solo parole NON allineate all'etichetta: descrizione di una casella vicina (es. "di famiglia")
+                # di cui l'OCR ha perso l'inizio -> si salta; una riga con numeri invece ferma la ricerca
+                if not mv and not re.search(r"\d", testo_cella) and abs(cella[0].x0 - x0) > 3 * h:
+                    continue
                 break
     return trovata, None

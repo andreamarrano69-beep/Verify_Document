@@ -99,3 +99,51 @@ class TestPdfComeTesto(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCuACaselle(unittest.TestCase):
+    """CU con caselle numerate, descrizioni su due righe e importi sotto."""
+
+    @classmethod
+    def setUpClass(cls):
+        from buste_realistiche import cu_a_caselle
+
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.cu = cu_a_caselle(Path(cls.tmp.name) / "cu.pdf")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_pdf_nativo_tutti_i_punti(self):
+        from buste_realistiche import CU_ATTESI
+
+        testo, r = analizza_documento(self.cu, autenticita=False)
+        self.assertEqual(r.tipo_documento, "Certificazione Unica (CU)")
+        for chiave, atteso in CU_ATTESI.items():
+            atteso = atteso if isinstance(atteso, int) else Decimal(atteso)
+            self.assertEqual(r.dati.get(chiave), atteso, f"{chiave}\n{testo}")
+        self.assertIsNone(r.dati.get("giorni_pensione"))  # "8" è il numero della casella accanto
+        k = {c.nome: c.esito for c in r.controlli}
+        for controllo in ("Imposta lorda", "Imposta netta = ritenute", "Addizionale regionale",
+                          "Addizionale comunale", "Contributi INPS"):
+            self.assertEqual(k[controllo], Esito.OK, controllo)
+
+    def test_imposta_lorda_alterata(self):
+        from buste_realistiche import cu_a_caselle
+
+        alterata = cu_a_caselle(Path(self.tmp.name) / "alterata.pdf", {"5.837,71": "4.900,00"})
+        _, r = analizza_documento(alterata, autenticita=False)
+        k = {c.nome: c.esito for c in r.controlli}
+        self.assertEqual(k["Imposta lorda"], Esito.ERRORE)
+        self.assertEqual(k["Imposta netta = ritenute"], Esito.ATTENZIONE)
+
+    @unittest.skipUnless(ocr_disponibile(), "Tesseract non installato")
+    def test_scansione_punti_principali(self):
+        testo, r = analizza_documento(scansione(self.cu, Path(self.tmp.name) / "cu_scan.pdf"), autenticita=False)
+        letto = f"\n--- testo letto ---\n{testo}"
+        self.assertEqual(r.tipo_documento, "Certificazione Unica (CU)", letto)
+        self.assertEqual(r.dati["codice_fiscale_dipendente"], "RSSMRA80A01H501U", letto)
+        self.assertEqual(r.dati["reddito_totale"], Decimal("25381.33"), letto)
+        self.assertEqual(r.dati["ritenute_irpef"], Decimal("4161.95"), letto)
+        self.assertNotEqual(r.esito_globale, Esito.ERRORE, letto)

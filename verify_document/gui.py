@@ -160,7 +160,8 @@ RIEPILOGO = {
               ("orario", "Orario"), ("qualifica", "Qualifica"), ("livello", "Livello"), ("totale_competenze", "Lordo"),
               ("cessione_quinto", "Cessione quinto"), ("delegazione_pagamento", "Delegazione"),
               ("pignoramento", "Pignoramento"), ("quinto_cedibile", "Quinto cedibile"),
-              ("cessione_disponibile", "Quinto ancora disponibile"), ("rischio_alterazione", "Rischio alterazione")],
+              ("cessione_disponibile", "Quinto ancora disponibile"), ("fattibilita_quinto", "Cessione del quinto"),
+              ("durata_massima_mesi", "Durata max (mesi)"), ("rischio_alterazione", "Rischio alterazione")],
     # regime e importo mensile sono nella fascia di sintesi in alto
     "Modello": [("periodo_imposta", "Anno d'imposta"), ("codice_fiscale_contribuente", "Codice fiscale"),
                 ("reddito_annuo", "Reddito annuo"), ("imposte_annue", "Imposte annue"),
@@ -179,6 +180,7 @@ RIEPILOGO = {
                  ("eta", "Età"), ("reddito_annuo", "Lordo annuo (13 rate)"), ("cessione_quinto", "Cessione quinto"),
                  ("delegazione_pagamento", "Delegazione"), ("pignoramento", "Pignoramento"),
                  ("quinto_cedibile", "Quinto cedibile"), ("cessione_disponibile", "Quinto ancora disponibile"),
+                 ("fattibilita_quinto", "Cessione del quinto"), ("durata_massima_mesi", "Durata max (mesi)"),
                  ("rischio_alterazione", "Rischio alterazione")],
     "Carta": [("cognome", "Cognome"), ("nome", "Nome"), ("codice_fiscale", "Codice fiscale"),
               ("data_scadenza", "Scadenza"), ("numero_documento", "N. documento"),
@@ -288,6 +290,7 @@ class App:
         menu.add_command(label="Dati (.json)…", command=lambda: self.esporta("json"))
         menu_esporta["menu"] = menu
         ttk.Button(azioni, text="🗂  Archivio", command=self.apri_archivio)
+        ttk.Button(azioni, text="💶  " + breve("Fattibilità quinto", "Quinto"), command=self.apri_quinto)
         ttk.Button(azioni, text="🧮  " + breve("Conteggio estinzione", "Estinzione"), command=self.apri_estinzione)
         azioni.aggiorna()
 
@@ -680,6 +683,17 @@ class App:
             self.apri_file()
         finally:
             self.var_tipo.set("Automatico")  # i file trascinati dopo vengono riconosciuti da soli
+
+    def apri_quinto(self) -> None:
+        sel = self.lista.selection()
+        ris = self.risultati.get(sel[0]) if sel else None
+        if ris is None or ris.report is None or not (ris.report.tipo_documento == "Busta paga" or
+                                                       ris.report.tipo_documento.startswith(("Cedolino pensione",
+                                                                                             "Certificato di pensione"))):
+            messagebox.showinfo("Fattibilità quinto", "Seleziona nell'elenco una busta paga o un cedolino della "
+                                "pensione già analizzati.", parent=self.root)
+            return
+        FinestraQuinto(self.root, ris.percorso.name, ris.report)
 
     def apri_estinzione(self) -> None:
         FinestraEstinzione(self.root)
@@ -1420,6 +1434,82 @@ class FinestraCliente:
         cartella = self.var_cartella.get()
         self.risultato = (nome, cf, cartella if cartella in self.clienti else None)
         self.win.destroy()
+
+
+class FinestraQuinto:
+    """Fattibilità della cessione del quinto con TAN e limiti di età modificabili (quelli della finanziaria)."""
+
+    def __init__(self, parent, nome: str, report: Report):
+        from .fattibilita import ETA_FINE_DIPENDENTI, ETA_FINE_PENSIONATI, TAN_INDICATIVO
+
+        self.report = report
+        self.win = tk.Toplevel(parent)
+        self.win.title("Fattibilità cessione del quinto")
+        adatta_finestra(self.win, 820, 560)
+        self.win.transient(parent)
+        c = ttk.Frame(self.win, padding=px(14))
+        c.pack(fill="both", expand=True)
+        ttk.Label(c, text="Fattibilità cessione del quinto", style="Titolo.TLabel").pack(anchor="w")
+        ttk.Label(c, text=nome, foreground="#666").pack(anchor="w")
+        parametri = ttk.Frame(c)
+        parametri.pack(fill="x", pady=(8, 6))
+        self.var = {}
+        for chiave, etichetta, valore in (("tan", "TAN %", str(TAN_INDICATIVO).replace(".", ",")),
+                                          ("eta_dip", "Età max a fine piano (dipendenti)", str(ETA_FINE_DIPENDENTI)),
+                                          ("eta_pens", "Età max a fine piano (pensionati)", str(ETA_FINE_PENSIONATI))):
+            ttk.Label(parametri, text=etichetta).pack(side="left", padx=(0, 4))
+            self.var[chiave] = tk.StringVar(value=valore)
+            e = ttk.Entry(parametri, textvariable=self.var[chiave], width=6)
+            e.pack(side="left", padx=(0, 14))
+            e.bind("<Return>", lambda _e: self.calcola())
+        ttk.Button(parametri, text="Ricalcola", style="Accent.TButton", command=self.calcola).pack(side="left")
+        self.testo = tk.Text(c, wrap="word", font=_f(10, famiglia="Consolas"), padx=10, pady=8, background="#f8fafc")
+        self.testo.pack(fill="both", expand=True)
+        self.testo.tag_configure("titolo", font=_f(11, "bold", "Consolas"), foreground="#1a5a96")
+        self.testo.tag_configure("no", font=_f(11, "bold", "Consolas"), foreground="#b3261e")
+        ttk.Button(c, text="Chiudi", command=self.win.destroy).pack(anchor="e", pady=(8, 0))
+        self.calcola()
+
+    def calcola(self) -> None:
+        from decimal import Decimal, InvalidOperation
+
+        from .fattibilita import valuta
+
+        try:
+            tan = Decimal(self.var["tan"].get().replace(",", ".").replace("%", "").strip())
+            eta_dip, eta_pens = int(self.var["eta_dip"].get()), int(self.var["eta_pens"].get())
+        except (InvalidOperation, ValueError):
+            messagebox.showwarning("Fattibilità", "Valori non validi", parent=self.win)
+            return
+        f = valuta(self.report, tan, eta_dip, eta_pens)
+        t = self.testo
+        t.configure(state="normal")
+        t.delete("1.0", "end")
+        if not f.possibile:
+            t.insert("end", "CESSIONE NON POSSIBILE\n", "no")
+            for m in f.motivi:
+                t.insert("end", f"  • {m}\n")
+        else:
+            t.insert("end", f"Rata massima: {formatta_euro(f.rata_massima)}", "titolo")
+            t.insert("end", "   (quinto disponibile, già tolte le cessioni in corso)\n")
+            if f.durata_incerta:
+                t.insert("end", "Durata: non oltre la scadenza del contratto a termine (data non letta)\n", "no")
+            else:
+                t.insert("end", f"Durata massima: {f.durata_massima} mesi\n\n", "titolo")
+                t.insert("end", f"{'Mesi':>6}{'Rata':>14}{'Totale rate':>16}{'Capitale (stima)':>20}\n")
+                for mesi, rata, montante, capitale in f.simulazione:
+                    t.insert("end", f"{mesi:>6}{formatta_euro(rata):>14}{formatta_euro(montante):>16}"
+                                    f"{formatta_euro(capitale):>20}\n")
+                t.insert("end", f"\nCapitale calcolato al TAN {str(tan).replace('.', ',')}% (senza costi e "
+                                "assicurazioni): l'importo vero lo dà la finanziaria.\n")
+            if f.delegazione:
+                t.insert("end", f"\nIn più è possibile una delegazione di pagamento fino a {formatta_euro(f.delegazione)} "
+                                "al mese.\n")
+        if f.note:
+            t.insert("end", "\nNOTE\n", "titolo")
+            for n in f.note:
+                t.insert("end", f"  • {n}\n")
+        t.configure(state="disabled")
 
 
 class FinestraEstinzione:

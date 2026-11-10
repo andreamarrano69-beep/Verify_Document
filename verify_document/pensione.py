@@ -209,6 +209,10 @@ def analizza(testo: str) -> Report:
                    f"Pensione lorda {formatta_euro(lordo)} al mese"
                    + (f", netta {formatta_euro(netto)}" if netto is not None else "")
                    + f" × {MENSILITA} mensilità = {formatta_euro(d['reddito_annuo'])} lordi l'anno")
+    if not d["tredicesima"]:
+        from .fattibilita import aggiungi_controlli
+
+        aggiungi_controlli(r)
     return r
 
 

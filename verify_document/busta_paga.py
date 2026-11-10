@@ -425,6 +425,9 @@ def analizza(testo: str) -> Report:
         base, descr = None, ""
     if not d.get("mensilita_aggiuntiva"):
         controlla_impegni(r, base, descr)
+        from .fattibilita import aggiungi_controlli
+
+        aggiungi_controlli(r)
 
     if netto:
         r.aggiungi("Netto mensile", Esito.INFO, f"Netto percepito: {formatta_euro(netto)}")

@@ -86,9 +86,14 @@ def riconosci(testo: str) -> int:
     t = testo.lower()
     punti = 0
     for k in ["redditi persone fisiche", "modello unico", "unico persone fisiche", "periodo d'imposta",
-              "quadro rn", "quadro lm", "reddito complessivo", "agenzia delle entrate", "imposta netta"]:
+              "quadro rn", "quadro lm", "reddito complessivo", "agenzia delle entrate", "imposta netta",
+              "protocollo telematico", "presentazione telematica"]:
         if k in t:
             punti += 1
+    from .telematico import SEGNI_RICEVUTA
+
+    if SEGNI_RICEVUTA.search(testo) and re.search(r"redditi|unico|dichiarazion", t):
+        punti += 3  # ricevuta di presentazione della dichiarazione
     return punti
 
 
@@ -141,6 +146,10 @@ def _precisa_regime(regime: str, d: dict) -> str:
 
 
 def analizza(testo: str) -> Report:
+    from . import telematico
+
+    if telematico.e_ricevuta(testo):  # solo la ricevuta dell'Agenzia delle Entrate
+        return telematico.analizza_ricevuta(testo)
     r = Report("Modello Redditi PF (ex Unico)")
     d = r.dati
 
@@ -177,6 +186,7 @@ def analizza(testo: str) -> Report:
     d["regime_fiscale"] = regime
     r.aggiungi("Regime fiscale", Esito.INFO if regime != "Non determinato" else Esito.ATTENZIONE,
                f"{regime} — quadri rilevati: {', '.join(quadri) or 'nessuno'}")
+    telematico.controlla(r, testo, d.get("periodo_imposta"))
     if "RE" not in quadri:
         d["compensi_re"] = d["spese_re"] = None
     if "RG" not in quadri and "RF" not in quadri:

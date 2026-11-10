@@ -3,6 +3,7 @@ AZIENDA: ESEMPIO SRL   Via Roma 1, 00100 Roma
 Partita IVA: 12345678903
 DIPENDENTE: ROSSI MARIO        Codice fiscale: RSSMRA80A01H501U
 Qualifica: Impiegato   Livello: 4   CCNL: Commercio
+Contratto: Tempo indeterminato   Orario: Tempo pieno
 Data assunzione: 01/03/2019
 
 COD  DESCRIZIONE                         COMPETENZE    TRATTENUTE

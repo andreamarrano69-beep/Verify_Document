@@ -15,6 +15,7 @@ Controlli:
 from __future__ import annotations
 
 import re
+from datetime import date
 from decimal import Decimal
 
 from .busta_paga import _trova_periodo
@@ -23,6 +24,7 @@ from .report import Esito, Report, cerca_importo, cerca_testo
 from .validators import trova_codici_fiscali, CF_REGEX, decodifica_codice_fiscale, formatta_euro
 
 MENSILITA = 13  # le pensioni sono pagate in 13 rate (la tredicesima a dicembre)
+GRUPPO_PENSIONE = "Pensione"
 
 # Categorie di pensione INPS più comuni (sigla iniziale della categoria)
 CATEGORIE = [
@@ -125,7 +127,13 @@ def analizza(testo: str) -> Report:
     if descrizione:
         nota = " — prestazione assistenziale: non è reddito da contributi versati" if natura == "assistenziale" else ""
         r.aggiungi("Tipo di pensione", Esito.INFO if natura == "previdenziale" else Esito.ATTENZIONE,
-                   f"{sigla}: {descrizione}{nota}")
+                   f"{sigla}: {descrizione}{nota}", GRUPPO_PENSIONE)
+    else:
+        r.aggiungi("Tipo di pensione", Esito.INFO,
+                   f"Categoria {sigla} non tra quelle note: verificarla sul certificato ObisM" if sigla
+                   else "Categoria della pensione non indicata nel documento", GRUPPO_PENSIONE)
+
+    _controlla_decorrenza(r, testo, sigla)
 
     # --- Importi -----------------------------------------------------------------------
     for chiave, etichette in ETICHETTE.items():
@@ -202,3 +210,63 @@ def analizza(testo: str) -> Report:
                    + (f", netta {formatta_euro(netto)}" if netto is not None else "")
                    + f" × {MENSILITA} mensilità = {formatta_euro(d['reddito_annuo'])} lordi l'anno")
     return r
+
+
+_NATURA = {"previdenziale": "pensione da contributi versati", "assistenziale": "prestazione assistenziale"}
+
+
+def leggi_decorrenza(testo: str) -> date | None:
+    """Data da cui decorre la pensione («Decorrenza: 01/05/2018», «in pagamento dal 05/2018»)."""
+    m = re.search(r"(?:data\s+(?:di\s+)?)?decorrenza(?:\s+(?:della\s+)?pensione)?|in\s+pagamento\s+dal|"
+                  r"pensionat[oa]\s+dal|liquidat[ao]\s+(?:con\s+decorrenza\s+)?dal", testo, re.IGNORECASE)
+    if not m:
+        return None
+    coda = testo[m.end(): m.end() + 40]
+    d = re.search(r"(?:(\d{1,2})[/.\-])?(\d{1,2})[/.\-](\d{4})", coda)
+    if not d:
+        return None
+    try:
+        return date(int(d.group(3)), int(d.group(2)), int(d.group(1) or 1))
+    except ValueError:
+        return None
+
+
+def _controlla_decorrenza(r: Report, testo: str, sigla: str | None) -> None:
+    """Da quando è in pensione: anni e mesi alla data del documento; età al pensionamento dal codice fiscale."""
+    d = r.dati
+    decorrenza = leggi_decorrenza(testo)
+    d["decorrenza_pensione"] = decorrenza
+    if decorrenza is None:
+        r.aggiungi("Decorrenza della pensione", Esito.INFO,
+                   "Data di decorrenza non indicata nel documento: si trova nel certificato ObisM o nella lettera di "
+                   "liquidazione INPS", GRUPPO_PENSIONE)
+        return
+    from .busta_paga import _anno_mese_periodo
+
+    am = _anno_mese_periodo(d.get("periodo")) or ((d["anno"], 12) if d.get("anno") else None)
+    oggi = date.today()
+    riferimento = date(*am, 1) if am else oggi
+    riferimento = min(riferimento, oggi) if riferimento.year > oggi.year else riferimento
+    mesi = (riferimento.year - decorrenza.year) * 12 + riferimento.month - decorrenza.month
+    if mesi < 0:
+        r.aggiungi("Decorrenza della pensione", Esito.ERRORE,
+                   f"Dal {decorrenza:%d/%m/%Y}: successiva alla data del documento", GRUPPO_PENSIONE)
+        return
+    anni, resto = divmod(mesi, 12)
+    durata = " e ".join(x for x in (f"{anni} ann{'o' if anni == 1 else 'i'}" if anni else "",
+                                    f"{resto} mes{'e' if resto == 1 else 'i'}" if resto or not anni else "") if x)
+    d["in_pensione_da"] = durata
+    dettaglio = f"In pensione dal {decorrenza:%d/%m/%Y}: da {durata}"
+    esito = Esito.INFO
+    nascita = d.get("data_nascita_da_cf")
+    if nascita:
+        eta = decorrenza.year - nascita.year - ((decorrenza.month, decorrenza.day) < (nascita.month, nascita.day))
+        d["eta_al_pensionamento"] = eta
+        dettaglio += f" (pensionato/a a {eta} anni)"
+        if sigla and sigla.startswith("VO") and eta < 55:
+            esito = Esito.ATTENZIONE
+            dettaglio += " — età molto bassa per una pensione di vecchiaia o anticipata: verificare"
+    if mesi < 12:
+        dettaglio += " — pensione recente: chiedere anche la lettera di liquidazione"
+    r.aggiungi("Decorrenza della pensione", esito, dettaglio, GRUPPO_PENSIONE)
+

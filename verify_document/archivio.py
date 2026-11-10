@@ -31,6 +31,7 @@ TIPI_BREVI = {
     "Cedolino pensione": "Cedolino pensione",
     "Certificato di pensione (ObisM)": "ObisM",
     "Estratto contributivo": "Estratto contributivo",
+    "Ricevuta telematica Modello Redditi": "Ricevuta Redditi",
 }
 _MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto",
          "settembre", "ottobre", "novembre", "dicembre"]
@@ -115,6 +116,7 @@ CATEGORIE = {
     "Busta paga": "Buste paga",
     "Certificazione Unica (CU)": "CU",
     "Modello Redditi PF (ex Unico)": "Modello Redditi",
+    "Ricevuta telematica Modello Redditi": "Modello Redditi",
     "Cedolino pensione": "Cedolini pensione",
     "Certificato di pensione (ObisM)": "ObisM",
     "Estratto contributivo": "Estratti contributivi",

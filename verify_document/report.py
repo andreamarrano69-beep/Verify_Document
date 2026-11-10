@@ -123,19 +123,33 @@ def sintesi(r: Report) -> Sintesi | None:
     d = r.dati
     t = r.tipo_documento
     if t.startswith("Modello Redditi"):
+        nota = "reddito annuo diviso 12 mesi; netto = dopo le imposte"
+        if d.get("protocollo_telematico"):
+            nota += " · trasmesso" + (f" il {d['data_presentazione']:%d/%m/%Y}" if d.get("data_presentazione") else "") \
+                + f" (protocollo {d['protocollo_telematico']})"
+        else:
+            nota += " · ⚠ nessun protocollo telematico: chiedere la ricevuta di presentazione"
         return Sintesi("Regime fiscale", d.get("regime_fiscale"), d.get("reddito_mensile_lordo"),
-                       d.get("reddito_mensile_netto"), "reddito annuo diviso 12 mesi; netto = dopo le imposte")
+                       d.get("reddito_mensile_netto"), nota)
     if t.startswith("Certificazione Unica"):
         return Sintesi("Tipo di reddito", d.get("tipo_reddito"), d.get("reddito_mensile_lordo"),
                        d.get("reddito_mensile_netto"), "media sui mesi del rapporto; netto = dopo ritenute e addizionali")
     if t.startswith(("Cedolino pensione", "Certificato di pensione")):
+        nota = "rata mensile, pagata per 13 mensilità"
+        if d.get("in_pensione_da"):
+            nota += f" · in pensione da {d['in_pensione_da']} (dal {d['decorrenza_pensione']:%d/%m/%Y})"
         return Sintesi("Tipo di pensione", d.get("tipo_pensione"), d.get("reddito_mensile_lordo"),
-                       d.get("reddito_mensile_netto"), "rata mensile, pagata per 13 mensilità")
+                       d.get("reddito_mensile_netto"), nota)
     if t == "Busta paga":
         netto, nota = d.get("netto"), f"busta paga di {d.get('periodo') or 'periodo non indicato'}"
         if netto is None and d.get("netto_calcolato") is not None:
             netto, nota = d["netto_calcolato"], nota + " · netto CALCOLATO (non letto nel documento)"
-        return Sintesi("Tipo di reddito", "Lavoro dipendente", d.get("totale_competenze"), netto, nota)
+        from .contratto import descrizione
+
+        tipo = "Lavoro dipendente " + ("pubblico" if d.get("datore_di_lavoro") == "Pubblico" else "privato")
+        contratto = descrizione(d)
+        return Sintesi("Tipo di reddito", f"{tipo} · {contratto}" if contratto else tipo,
+                       d.get("totale_competenze"), netto, nota)
     return None
 
 

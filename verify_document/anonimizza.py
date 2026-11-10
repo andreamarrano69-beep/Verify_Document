@@ -83,7 +83,8 @@ def oscura_indirizzi_e_frammenti(t: str) -> str:
 
 CF_OSCURATO = "XXXXXX00X00X000X"
 CHIAVI_CF = ("codice_fiscale", "codice_fiscale_dipendente", "codice_fiscale_contribuente", "codice_fiscale_pensionato")
-CHIAVI_NUMERI = ("numero_documento", "numero_pensione", "matricola", "iban", "luogo_nascita")
+CHIAVI_NUMERI = ("numero_documento", "numero_pensione", "matricola", "iban", "luogo_nascita", "intermediario",
+                 "protocollo_telematico")
 
 
 def mappa_sensibili(reports) -> dict[str, str]:

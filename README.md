@@ -196,6 +196,21 @@ finestre secondarie non superano mai lo schermo. Sotto 1500×880 punti effettivi
 1920×1080 al 150%) si attiva la **modalità compatta**: caratteri un po' più piccoli e testi dei pulsanti
 più brevi. Per provarla o escluderla: variabile `VERIFY_DOCUMENT_COMPATTO=1` (o `0`).
 
+## Informazioni per settore
+
+- **Privato e Statale** (busta paga / cedolino NoiPA): tipo di contratto (tempo indeterminato, determinato con
+  data di fine, apprendistato, supplenza, intermittente, somministrazione), orario (tempo pieno o part-time
+  orizzontale/verticale/misto con %), qualifica (operaio, impiegato, quadro, dirigente, docente, collaboratore
+  scolastico, ...), livello o area, mansione, CCNL, datore privato o pubblico. Contratto a termine: avviso
+  che la cessione del quinto non può durare oltre la scadenza; contratto già scaduto: errore.
+- **Pensionato**: tipo di pensione (vecchiaia/anticipata, invalidità, superstiti, sociale, ...), data di
+  **decorrenza**, da quanto tempo è in pensione ed età al pensionamento.
+- **Autonomo**: **presentazione telematica** del Modello Redditi: protocollo (17+6 cifre), data di
+  presentazione entro la scadenza (31 ottobre; tardiva entro 90 giorni; oltre = omessa), data nel protocollo,
+  intermediario, ricevuta scartata, dichiarazione integrativa. Anche la sola **ricevuta** dell'Agenzia delle
+  Entrate viene riconosciuta; nell'elenco del settore Autonomo «Ricevuta telematica» è verde se c'è la
+  ricevuta o se il protocollo è nel modello.
+
 ## Conteggio estinzione
 
 **🧮 Conteggio estinzione**: inserisci rata, decorrenza, scadenza (oppure rate totali / residue) e, se noti,
@@ -348,6 +363,8 @@ verify_document/
   modello_redditi.py  analisi Modello Redditi PF
   pensione.py         analisi cedolino pensione e certificato ObisM
   estratto_contributivo.py  estratto conto contributivo: periodi, somma contributi, anzianità
+  contratto.py        tipo di contratto, orario, qualifica, livello (privati e statali)
+  telematico.py       presentazione telematica del Modello Redditi e ricevuta dell'Agenzia delle Entrate
   estinzione.py       conteggio sommario di estinzione anticipata
   settori.py          settori (Privato, Pensionato, Statale, Autonomo) e documenti da chiedere
   deduzioni.py        importi della busta ricavati dai calcoli quando l'OCR perde le intestazioni

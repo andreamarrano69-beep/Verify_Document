@@ -1,0 +1,10 @@
+AGENZIA DELLE ENTRATE
+COMUNICAZIONE DI AVVENUTO RICEVIMENTO
+(dati di esempio inventati)
+
+Dichiarazione: REDDITI PF 2026 - Periodo d'imposta 2025
+Codice fiscale del contribuente: VRDGPP90E10L219Y
+Protocollo telematico n. 26092212345678901 - 000001
+Data di ricezione: 22/09/2026
+Codice fiscale dell'intermediario: 12345678903
+La dichiarazione è stata acquisita. Esito: accolta.

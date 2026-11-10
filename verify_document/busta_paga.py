@@ -235,6 +235,11 @@ def analizza(testo: str) -> Report:
         r.aggiungi("Data assunzione", esito, dettaglio)
 
 
+    # --- Contratto: tipo di rapporto, orario, qualifica, livello ----------------
+    from .contratto import controlla as controlla_contratto
+
+    controlla_contratto(r, testo, _anno_mese_periodo(periodo))
+
     # --- Importi ------------------------------------------------------------
     for chiave, etichette in ETICHETTE.items():
         d[chiave] = cerca_importo(testo, etichette)

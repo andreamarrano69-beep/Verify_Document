@@ -47,6 +47,8 @@ class Documento:
             return "pensione"
         if t == "Estratto contributivo":
             return "estratto"
+        if t.startswith("Ricevuta telematica"):
+            return "ricevuta"
         return "anagrafica"
 
     @property
@@ -690,6 +692,16 @@ def fascicolo(documenti: list[tuple[str, Report]], anno_corrente: int | None = N
                             else "Modello Redditi")
         if pensioni:
             presenti.append(f"Documenti di pensione: {len(pensioni)}")
+        for ric in (d for d in ds if d.tipo == "ricevuta"):
+            dr = ric.report.dati
+            stato = ""
+            modello = next((x for x in redditi if x.report.dati.get("periodo_imposta") == dr.get("periodo_imposta")
+                            and x.report.dati.get("protocollo_telematico")), None)
+            if modello and dr.get("protocollo_telematico"):
+                stato = (" — uguale a quello del modello ✔" if modello.report.dati["protocollo_telematico"]
+                         == dr["protocollo_telematico"] else " — DIVERSO da quello del modello ⚠")
+            presenti.append(f"Ricevuta telematica redditi {dr.get('periodo_imposta') or ''}: protocollo "
+                            f"{dr.get('protocollo_telematico') or 'non letto'}{stato}")
         estratti = [d for d in ds if d.tipo == "estratto"]
         if estratti:
             e = max(estratti, key=lambda d: d.report.dati.get("ultimo_contributo") or date.min).report.dati

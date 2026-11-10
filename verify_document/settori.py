@@ -49,6 +49,8 @@ SETTORI: dict[str, dict] = {
         "icona": "💼", "descrizione": "Partita IVA, professionista, ditta individuale",
         "documenti": [VoceDocumento("redditi", "Unico / Redditi", "Modello Redditi PF", minimo=2,
                                     nota="ultimi 2 anni"),
+                      VoceDocumento("ricevuta", "Ricevuta telematica", "Modello Redditi PF",
+                                    nota="protocollo Agenzia Entrate (anche nel modello)"),
                       IDENTITA, ESTRATTO,
                       VoceDocumento("cu", "CU", "Certificazione Unica (CU)", richiesto=False,
                                     nota="se ha anche redditi da lavoro")],
@@ -56,11 +58,23 @@ SETTORI: dict[str, dict] = {
 }
 
 
+def chiavi_caricate(report: Report | None) -> list[str]:
+    """Voci dell'elenco a cui corrisponde un documento (un Modello Redditi con protocollo vale anche come ricevuta)."""
+    chiave = tipo_caricato(report)
+    if chiave is None:
+        return []
+    if chiave == "redditi" and report.dati.get("protocollo_telematico"):
+        return ["redditi", "ricevuta"]
+    return [chiave]
+
+
 def tipo_caricato(report: Report | None) -> str | None:
     """Chiave della voce a cui corrisponde un documento analizzato."""
     if report is None:
         return None
     t = report.tipo_documento
+    if t.startswith("Ricevuta telematica"):
+        return "ricevuta"
     if t == "Busta paga":
         return "busta"
     if t == "Cedolino pensione":
@@ -105,8 +119,7 @@ class StatoVoce:
 def stato_documenti(settore: str, reports: list[Report | None]) -> list[StatoVoce]:
     conteggio: dict[str, int] = {}
     for r in reports:
-        k = tipo_caricato(r)
-        if k:
+        for k in chiavi_caricate(r):
             conteggio[k] = conteggio.get(k, 0) + 1
     return [StatoVoce(v, conteggio.get(v.chiave, 0)) for v in SETTORI[settore]["documenti"]]
 
@@ -123,4 +136,5 @@ def riepilogo(stati: list[StatoVoce]) -> str:
 def documenti_estranei(settore: str, reports: list[Report | None]) -> list[str]:
     """Documenti caricati che non fanno parte dell'elenco del settore (es. cedolino pensione tra i Privati)."""
     previsti = {v.chiave for v in SETTORI[settore]["documenti"]}
-    return sorted({r.tipo_documento for r in reports if r is not None and tipo_caricato(r) not in previsti})
+    return sorted({r.tipo_documento for r in reports
+                   if r is not None and not set(chiavi_caricate(r)) & previsti})

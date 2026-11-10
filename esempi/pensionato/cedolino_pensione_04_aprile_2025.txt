@@ -2,6 +2,7 @@ INPS - ISTITUTO NAZIONALE DELLA PREVIDENZA SOCIALE
 CEDOLINO DELLA PENSIONE - Rata di APRILE 2025
 Pensionato: BIANCHI GIUSEPPE          Codice fiscale: BNCGPP55A10H501F
 Categoria pensione: VO        Numero pensione: 12345678        Sede: ROMA
+Decorrenza pensione: 01/05/2019
 
 DESCRIZIONE                                         IMPORTO
 Importo lordo                                       1.850,00

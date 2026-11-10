@@ -1182,7 +1182,7 @@ class App:
             from .report_pdf import genera_report_pdf
 
             esito_confronto = confronta(validi) if len(validi) >= 2 else None
-            genera_report_pdf(dest, validi, esito_confronto, imp)
+            genera_report_pdf(dest, validi, esito_confronto, imp, settore=self.settore)
         except ImportError:
             messagebox.showerror("Report PDF", "Manca la libreria reportlab.\nNel terminale: pip install reportlab",
                                  parent=self.root)

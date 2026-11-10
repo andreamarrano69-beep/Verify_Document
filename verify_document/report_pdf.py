@@ -92,7 +92,8 @@ def _cliente(documenti: list[tuple[str, Report]]) -> str:
 
 
 def genera_report_pdf(destinazione: str | Path, documenti: list[tuple[str, Report]],
-                      confronto=None, impostazioni: dict | None = None, oscura: bool | None = None) -> Path:
+                      confronto=None, impostazioni: dict | None = None, oscura: bool | None = None,
+                      settore: str | None = None) -> Path:
     """Crea il PDF. ``documenti``: [(nome file, Report)]; ``confronto``: EsitoConfronto o None.
 
     ``oscura``: dati personali oscurati (nome → iniziali, codice fiscale, data di nascita, numeri di documento);
@@ -231,6 +232,27 @@ def genera_report_pdf(destinazione: str | Path, documenti: list[tuple[str, Repor
                              ("LEFTPADDING", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 6),
                              ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
     storia += [box, Spacer(1, 2 * mm)]
+
+    # --- 2b. Scheda del cliente per settore -------------------------------------------------
+    from .scheda import scheda_cliente
+
+    settore_scheda, voci_scheda = scheda_cliente(documenti, confronto, settore)
+    if voci_scheda:
+        righe_scheda = [[P(voce, "cella_b"), P(valore, "cella")] for voce, valore in voci_scheda]
+        def da_evidenziare(voce: str, valore: str) -> bool:
+            if voce == "Documenti mancanti":
+                return not valore.startswith("nessuno")
+            if voce.startswith("Controlli con INPS"):
+                return "0 non coerenti" not in valore or "non eseguiti" in valore
+            if voce in ("Cessione del quinto", "Presentazione telematica"):
+                return valore.startswith(("NON", "NESSUN", "Rata")) or "non possibile" in valore.lower()
+            return False
+
+        colori_scheda = [(i, "#fff4d6") for i, (voce, valore) in enumerate(voci_scheda) if da_evidenziare(voce, valore)]
+        t_scheda = Table(righe_scheda, colWidths=[0.27 * larghezza, 0.73 * larghezza])
+        t_scheda.setStyle(stile_tabella(intestazione=False, righe_colore=colori_scheda))
+        titolo = f"Scheda del cliente - {settore_scheda}" if settore_scheda else "Scheda del cliente"
+        storia += [Paragraph(_t(titolo), st["h2"]), t_scheda]
 
     # --- 3. Sintesi dei redditi -----------------------------------------------------------
     righe = [intestazione_col("Documento", "Tipo", "Periodo", "Regime / tipo di reddito",

@@ -6,6 +6,7 @@ all'apertura e quanti ne servono. ``stato_documenti`` dice quali sono già caric
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from .report import Report
@@ -138,3 +139,82 @@ def documenti_estranei(settore: str, reports: list[Report | None]) -> list[str]:
     previsti = {v.chiave for v in SETTORI[settore]["documenti"]}
     return sorted({r.tipo_documento for r in reports
                    if r is not None and not set(chiavi_caricate(r)) & previsti})
+
+
+# --- Riconoscimento del settore dai documenti caricati ---------------------------------------------------
+_PUBBLICO = re.compile(r"noipa|ministero|ministro|istituto\s+(?:comprensivo|scolastico)|liceo|scuola|universit|"
+                       r"\bcomune\s+di\b|\bregione\b|provincia|azienda\s+sanitaria|\basl\b|\basp\b|agenzia\s+delle|"
+                       r"inps\b|inail\b|presidenza|prefettura|questura|carabinieri|polizia|esercito|marina|"
+                       r"aeronautica|guardia\s+di\s+finanza|vigili\s+del\s+fuoco|tribunale|ragioneria",
+                       re.IGNORECASE)
+
+
+def _indizi(r: Report) -> list[tuple[str, int, str]]:
+    """(settore, peso, motivo) suggeriti da un documento."""
+    t, d = r.tipo_documento, r.dati
+    if t.startswith(("Cedolino pensione", "Certificato di pensione")):
+        return [("Pensionato", 3, t.split(" (")[0].lower())]
+    if t == "Busta paga":
+        if d.get("datore_di_lavoro") == "Pubblico":
+            return [("Statale", 3, "cedolino di un ente pubblico")]
+        return [("Privato", 3, "busta paga di un'azienda privata")]
+    if t.startswith("Certificazione Unica"):
+        tipo = d.get("tipo_reddito") or ""
+        if tipo == "Pensione":
+            return [("Pensionato", 2, "CU di pensione")]
+        if tipo.startswith("Lavoro dipendente"):
+            if _PUBBLICO.search(str(d.get("sostituto_imposta") or "")):
+                return [("Statale", 2, "CU di un ente pubblico")]
+            return [("Privato", 2, "CU da lavoro dipendente")]
+        return []
+    if t.startswith("Modello Redditi"):
+        regime = d.get("regime_fiscale") or ""
+        if regime.startswith(("Forfettario", "Regime di vantaggio", "Impresa", "Lavoro autonomo", "Socio")):
+            return [("Autonomo", 3, f"Modello Redditi con regime {regime.split(' (')[0].lower()}")]
+        if regime.startswith("Pensionato"):
+            return [("Pensionato", 1, "Modello Redditi con redditi di pensione")]
+        if regime.startswith("Lavoratore dipendente"):
+            return [("Privato", 1, "Modello Redditi con redditi da lavoro dipendente")]
+        return []
+    if t.startswith("Ricevuta telematica"):
+        return [("Autonomo", 1, "ricevuta del Modello Redditi")]
+    if t == "Estratto contributivo":
+        # la gestione con più settimane di contributi
+        totali = []
+        for c in r.controlli:
+            m = re.match(r"([\d.]+) settimane", c.dettaglio) \
+                if c.nome.startswith("Totale ") and c.nome != "Totale del documento" else None
+            if m:
+                totali.append((int(m.group(1).replace(".", "")), c.nome.removeprefix("Totale ").lower()))
+        if not totali:
+            return []
+        gestione = max(totali)[1]
+        if re.search(r"gestione separata|artigian|commerciant|autonom|professionist|coltivator", gestione):
+            return [("Autonomo", 1, "estratto con contributi soprattutto da autonomo")]
+        if re.search(r"pubblic|cpdel|ctps|inpdap|stato|scuola", gestione):
+            return [("Statale", 1, "estratto con contributi soprattutto da dipendente pubblico")]
+        if re.search(r"dipendent", gestione):
+            return [("Privato", 1, "estratto con contributi soprattutto da lavoro dipendente")]
+        return []
+    return []  # documenti d'identità: nessun settore
+
+
+def riconosci_settore(reports: list[Report | None]) -> tuple[str | None, str]:
+    """Settore più probabile dai documenti e il motivo; (None, spiegazione) se non si capisce."""
+    punti: dict[str, int] = {}
+    motivi: dict[str, list[str]] = {}
+    for r in reports:
+        if r is None:
+            continue
+        for settore, peso, motivo in _indizi(r):
+            punti[settore] = punti.get(settore, 0) + peso
+            motivi.setdefault(settore, [])
+            if motivo not in motivi[settore]:
+                motivi[settore].append(motivo)
+    if not punti:
+        return None, "nessun documento indica il settore (es. solo documenti d'identità o documenti non leggibili)"
+    ordinati = sorted(punti.items(), key=lambda x: -x[1])
+    if len(ordinati) > 1 and ordinati[0][1] == ordinati[1][1]:
+        return None, f"documenti di settori diversi ({ordinati[0][0]} e {ordinati[1][0]}): scegli tu il settore"
+    settore = ordinati[0][0]
+    return settore, ", ".join(motivi[settore])

@@ -171,7 +171,14 @@ python -m verify_document esempi/pensionato/*.txt --confronta
 
 ## Home: scelta del settore
 
-All'avvio si apre la **Home** con il nome del programma, i pulsanti dei settori
+All'avvio si apre la **Home**. Il modo più veloce: **📂 Carica i documenti del cliente** (o trascinali
+sulla finestra): il programma li legge e **riconosce da solo il settore** — cedolino pensione/ObisM/CU di
+pensione → Pensionato; busta paga di un ente pubblico (NoiPA, ministero, scuola, ...) → Statale; altra busta
+paga o CU da dipendente → Privato; Unico forfettario/ordinario/impresa → Autonomo. Se non si capisce (es.
+solo documenti d'identità, o documenti di settori diversi) lo dice e si sceglie a mano. Nella schermata del
+settore un avviso segnala se i documenti aggiunti sembrano di un altro settore.
+
+Sempre nella Home: il nome del programma, i pulsanti dei settori
 (🏢 **Privato**, 👴 **Pensionato**, 🏛 **Statale**, 💼 **Autonomo**), ⚙ Impostazioni ed Esci.
 
 Scelto il settore, in alto compaiono i **documenti da chiedere al cliente**:

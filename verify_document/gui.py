@@ -229,6 +229,8 @@ class App:
         self.dnd = dnd
         self.risultati: dict[str, Risultato] = {}
         self.correzioni: dict[str, tuple[str, str]] = {}  # cliente scritto a mano per documento
+        self.attesa_settore = False  # documenti caricati dalla Home: settore da riconoscere a fine lettura
+        self.home_visibile = False
         self.coda: queue.Queue[Risultato] = queue.Queue()
         self.in_corso = 0
 
@@ -524,9 +526,23 @@ class App:
                                "contributivi e documenti d'identità", bg=sfondo, fg="#444444", font=_f(12))
         sottotitolo.pack(pady=(2, 0))
         tk.Label(centro, text="Tutto in locale: nessun dato inviato su internet", bg=sfondo, fg="#777777",
-                 font=_f(10)).pack(pady=(0, px(14 if COMPATTO else 26)))
-        tk.Label(centro, text="Scegli il settore del cliente", bg=sfondo, fg="#1f2328",
-                 font=_f(15, "bold")).pack(pady=(0, px(8 if COMPATTO else 12)))
+                 font=_f(10)).pack(pady=(0, px(12 if COMPATTO else 22)))
+
+        # caricamento diretto: il programma legge i documenti e riconosce da solo il settore
+        carica = tk.Button(centro, text="📂  Carica i documenti del cliente", font=_f(17, "bold"), bg=BLU,
+                           fg="#ffffff", activebackground="#174e83", activeforeground="#ffffff", relief="flat", bd=0,
+                           padx=px(28), pady=px(10 if COMPATTO else 14), cursor="hand2", command=self.carica_da_home)
+        carica.pack()
+        tk.Label(centro, text=("Il programma li legge e riconosce da solo il settore (busta paga, cedolino pensione, "
+                               "CU, Unico, estratto contributivo). Puoi anche trascinarli qui."
+                               if self.dnd else "Il programma li legge e riconosce da solo il settore "
+                               "(busta paga, cedolino pensione, CU, Unico, estratto contributivo)."),
+                 bg=sfondo, fg="#555555", font=_f(10)).pack(pady=(px(6), 0))
+        self.lbl_home = tk.Label(centro, text="", bg=sfondo, font=_f(10, "bold"), wraplength=px(760), justify="center")
+        self.lbl_home.pack(pady=(px(4), 0))
+        self.progress_home = ttk.Progressbar(centro, mode="indeterminate", length=px(260))
+        tk.Label(centro, text="oppure scegli tu il settore", bg=sfondo, fg="#1f2328",
+                 font=_f(14, "bold")).pack(pady=(px(14 if COMPATTO else 22), px(8 if COMPATTO else 12)))
         griglia = tk.Frame(centro, bg=sfondo)
         griglia.pack()
         colonne = []
@@ -563,12 +579,52 @@ class App:
                  font=_f(9)).pack(side="left")
         return home
 
+    def carica_da_home(self) -> None:
+        if self.in_corso:
+            messagebox.showwarning("Attendere", "Analisi ancora in corso.", parent=self.root)
+            return
+        if self.risultati:
+            nuovo = messagebox.askyesnocancel(
+                "Documenti già aperti", f"Sono aperti {len(self.risultati)} documenti.\n\nIniziare un nuovo cliente?\n"
+                "Sì = svuota l'elenco   ·   No = aggiungi a quelli aperti", parent=self.root)
+            if nuovo is None:
+                return
+            if nuovo:
+                self.svuota()
+                self.settore = None
+        self.var_tipo.set("Automatico")
+        self.apri_file()
+
+    def _settore_automatico(self) -> None:
+        """Al termine della lettura dei documenti caricati dalla Home: entra nel settore riconosciuto."""
+        from .settori import riconosci_settore
+
+        self.attesa_settore = False
+        self.progress_home.stop()
+        self.progress_home.pack_forget()
+        settore, motivo = riconosci_settore([r.report for r in self.risultati.values() if r.report])
+        if settore is None:
+            self.settore = None  # la scelta manuale che segue non chiede «nuovo cliente?»
+            illeggibili = sum(1 for r in self.risultati.values() if r.report is None)
+            testo = f"Non riesco a capire il settore: {motivo}."
+            if illeggibili:
+                testo += f" ({illeggibili} documenti non leggibili.)"
+            self.lbl_home.configure(text=testo + " I documenti sono caricati: scegli il settore qui sotto.",
+                                    fg="#b3261e")
+            return
+        self.lbl_home.configure(text="")
+        self.entra_settore(settore, chiedi=False)
+        self.lbl_settore.configure(text=self.lbl_settore.cget("text") + "  (riconosciuto in automatico)")
+        self.var_stato.set(f"Settore riconosciuto: {settore} — {motivo}. Se è sbagliato: «Cambia settore».")
+
     def mostra_home(self) -> None:
+        self.home_visibile = True
         self.principale.pack_forget()
         self.home.pack(fill="both", expand=True)
 
-    def entra_settore(self, settore: str) -> None:
-        if self.settore and settore != self.settore and self.risultati and not self.in_corso:
+    def entra_settore(self, settore: str, chiedi: bool = True) -> None:
+        self.lbl_home.configure(text="")
+        if chiedi and self.settore and settore != self.settore and self.risultati and not self.in_corso:
             nuovo = messagebox.askyesnocancel(
                 "Cambio settore", f"Sono aperti {len(self.risultati)} documenti.\n\nIniziare un nuovo cliente?\n"
                 "Sì = svuota l'elenco   ·   No = tieni i documenti", parent=self.root)
@@ -577,6 +633,7 @@ class App:
             if nuovo:
                 self.svuota()
         self.settore = settore
+        self.home_visibile = False
         info = SETTORI[settore]
         self.lbl_settore.configure(text=f"{info['icona']}  {settore} — documenti del cliente")
         self.root.title(f"Verify Document {__version__} — {settore}")
@@ -604,6 +661,11 @@ class App:
                           cursor="hand2", command=lambda t=st.voce.tipo_analisi: self.scansiona_prodotto(t))
         self.riquadro_voci.aggiorna()
         testo = riepilogo(stati)
+        from .settori import riconosci_settore
+
+        suggerito, _ = riconosci_settore(reports)
+        if suggerito and suggerito != self.settore:
+            testo += f"   ·   ⚠ i documenti sembrano del settore {suggerito}: «Cambia settore» se serve"
         estranei = documenti_estranei(self.settore, reports)
         if estranei:
             testo += "   ·   altri documenti aperti: " + ", ".join(estranei)
@@ -623,6 +685,11 @@ class App:
         FinestraEstinzione(self.root)
 
     def aggiungi(self, percorsi) -> None:
+        if self.home_visibile and percorsi:  # caricati dalla Home: poi si riconosce il settore
+            self.attesa_settore = True
+            self.lbl_home.configure(text=f"Lettura di {len(percorsi)} documenti in corso…", fg="#1a5a96")
+            self.progress_home.pack(pady=(px(4), 0), before=self.lbl_home)
+            self.progress_home.start(12)
         for p in percorsi:
             p = Path(p)
             if p.is_dir():
@@ -733,6 +800,8 @@ class App:
                     stato += f" {nuovi} salvati nell'archivio documenti."
                 self.var_stato.set(stato)
             self.aggiorna_fascicolo()
+            if self.attesa_settore:
+                self._settore_automatico()
         elif self.in_corso <= 0:
             self.in_corso = 0
             self.progress.stop()

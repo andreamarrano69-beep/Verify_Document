@@ -53,3 +53,59 @@ class TestSettori(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRiconoscimentoSettore(unittest.TestCase):
+    """Il settore si riconosce dai documenti caricati dalla Home."""
+
+    @staticmethod
+    def _docs(*percorsi):
+        from pathlib import Path
+
+        from verify_document.cli import analizza_documento
+
+        base = Path(__file__).resolve().parent.parent / "esempi"
+        return [analizza_documento(base / p)[1] for p in percorsi]
+
+    def test_esempi(self):
+        from verify_document.settori import riconosci_settore
+
+        casi = {
+            ("busta_paga_esempio.txt",): "Privato",
+            ("pensionato/cedolino_pensione_03_marzo_2025.txt", "pensionato/cu_pensione_2025.txt"): "Pensionato",
+            ("modello_redditi_forfettario.txt", "ricevuta_redditi_esempio.txt"): "Autonomo",
+            ("cu_esempio.txt",): "Privato",
+            ("estratto/estratto_contributivo_esempio.txt",): "Privato",  # soprattutto lavoro dipendente
+            ("busta_paga_esempio.txt", "carta_identita_esempio.txt"): "Privato",  # l'identità non conta
+        }
+        for percorsi, atteso in casi.items():
+            settore, motivo = riconosci_settore(self._docs(*percorsi))
+            self.assertEqual(settore, atteso, (percorsi, motivo))
+            self.assertTrue(motivo)
+
+    def test_non_riconosciuto(self):
+        from verify_document.settori import riconosci_settore
+
+        settore, motivo = riconosci_settore(self._docs("carta_identita_esempio.txt"))
+        self.assertIsNone(settore)
+        self.assertIn("documenti d'identità", motivo)
+        self.assertEqual(riconosci_settore([]), (None, riconosci_settore([None])[1]))
+
+    def test_busta_pubblica_statale(self):
+        from verify_document.report import Report
+        from verify_document.settori import riconosci_settore
+
+        r = Report("Busta paga")
+        r.dati["datore_di_lavoro"] = "Pubblico"
+        self.assertEqual(riconosci_settore([r])[0], "Statale")
+        cu = Report("Certificazione Unica (CU)")
+        cu.dati.update({"tipo_reddito": "Lavoro dipendente", "sostituto_imposta": "MINISTERO DELL'ISTRUZIONE"})
+        self.assertEqual(riconosci_settore([cu])[0], "Statale")
+
+    def test_settori_diversi_in_parita(self):
+        from verify_document.settori import riconosci_settore
+
+        settore, motivo = riconosci_settore(self._docs("busta_paga_esempio.txt",
+                                                       "pensionato/cedolino_pensione_03_marzo_2025.txt"))
+        self.assertIsNone(settore)
+        self.assertIn("settori diversi", motivo)

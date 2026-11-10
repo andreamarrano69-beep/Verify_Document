@@ -24,32 +24,32 @@ class VoceDocumento:
 IDENTITA = VoceDocumento("identita", "Documento d'identità", "Documento d'identità", nota="carta d'identità, patente, …")
 CU = VoceDocumento("cu", "CU", "Certificazione Unica (CU)", nota="ultima Certificazione Unica")
 REDDITI_FACOLTATIVO = VoceDocumento("redditi", "Unico / Redditi", "Modello Redditi PF", richiesto=False)
-ESTRATTO_FACOLTATIVO = VoceDocumento("estratto", "Estratto contributivo", "Estratto contributivo", richiesto=False,
-                                     nota="per l'anzianità contributiva")
+ESTRATTO = VoceDocumento("estratto", "Estratto contributivo", "Estratto contributivo",
+                         nota="per l'anzianità contributiva")
 
 SETTORI: dict[str, dict] = {
     "Privato": {
         "icona": "🏢", "descrizione": "Dipendente di azienda privata",
         "documenti": [VoceDocumento("busta", "Buste paga", "Busta paga", minimo=3, nota="ultime 3 mensilità"),
-                      CU, IDENTITA, REDDITI_FACOLTATIVO, ESTRATTO_FACOLTATIVO],
+                      CU, IDENTITA, ESTRATTO, REDDITI_FACOLTATIVO],
     },
     "Pensionato": {
         "icona": "👴", "descrizione": "Pensionato INPS o altre casse",
         "documenti": [VoceDocumento("cedolino_pensione", "Cedolino pensione", "Pensione (cedolino / ObisM)",
                                     nota="ultimo cedolino"),
                       VoceDocumento("obism", "ObisM", "Pensione (cedolino / ObisM)", nota="certificato di pensione"),
-                      CU, IDENTITA, REDDITI_FACOLTATIVO],
+                      CU, IDENTITA, ESTRATTO, REDDITI_FACOLTATIVO],
     },
     "Statale": {
         "icona": "🏛", "descrizione": "Dipendente pubblico (NoiPA, enti, scuola)",
         "documenti": [VoceDocumento("busta", "Cedolini NoiPA", "Busta paga", minimo=3, nota="ultime 3 mensilità"),
-                      CU, IDENTITA, REDDITI_FACOLTATIVO, ESTRATTO_FACOLTATIVO],
+                      CU, IDENTITA, ESTRATTO, REDDITI_FACOLTATIVO],
     },
     "Autonomo": {
         "icona": "💼", "descrizione": "Partita IVA, professionista, ditta individuale",
         "documenti": [VoceDocumento("redditi", "Unico / Redditi", "Modello Redditi PF", minimo=2,
                                     nota="ultimi 2 anni"),
-                      IDENTITA, ESTRATTO_FACOLTATIVO,
+                      IDENTITA, ESTRATTO,
                       VoceDocumento("cu", "CU", "Certificazione Unica (CU)", richiesto=False,
                                     nota="se ha anche redditi da lavoro")],
     },

@@ -178,10 +178,10 @@ Scelto il settore, in alto compaiono i **documenti da chiedere al cliente**:
 
 | Settore | Richiesti | Facoltativi |
 |---|---|---|
-| Privato | 3 buste paga, CU, documento d'identità | Unico/Redditi, estratto contributivo |
-| Pensionato | cedolino pensione, ObisM, CU, documento d'identità | Unico/Redditi |
-| Statale | 3 cedolini NoiPA, CU, documento d'identità | Unico/Redditi, estratto contributivo |
-| Autonomo | Unico/Redditi (ultimi 2 anni), documento d'identità | estratto contributivo, CU |
+| Privato | 3 buste paga, CU, documento d'identità, estratto contributivo | Unico/Redditi |
+| Pensionato | cedolino pensione, ObisM, CU, documento d'identità, estratto contributivo | Unico/Redditi |
+| Statale | 3 cedolini NoiPA, CU, documento d'identità, estratto contributivo | Unico/Redditi |
+| Autonomo | Unico/Redditi (ultimi 2 anni), documento d'identità, estratto contributivo | CU |
 
 Ogni documento è un pulsante: clic → si sceglie il file, analizzato con il tipo giusto.
 Il colore indica cosa c'è e cosa manca: **verde** caricato, **giallo** ne servono altri (es. «Buste paga 2 di 3»),

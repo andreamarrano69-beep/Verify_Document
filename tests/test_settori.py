@@ -33,13 +33,18 @@ class TestSettori(unittest.TestCase):
         self.assertEqual(stati["cu"].stato, "manca")
         self.assertEqual(stati["redditi"].stato, "facoltativo")
         docs = [doc("Busta paga")] * 3 + [doc("Certificazione Unica (CU)"), doc("Carta d'identità elettronica (CIE)")]
-        testo = riepilogo(stato_documenti("Privato", docs))
-        self.assertEqual(testo, "Documenti richiesti: 3 di 3 — completo ✔")
+        self.assertIn("mancano: Estratto contributivo", riepilogo(stato_documenti("Privato", docs)))
+        testo = riepilogo(stato_documenti("Privato", docs + [doc("Estratto contributivo")]))
+        self.assertEqual(testo, "Documenti richiesti: 4 di 4 — completo ✔")
 
     def test_riepilogo_mancanti_e_estranei(self):
         docs = [doc("Cedolino pensione"), doc("Busta paga")]
-        self.assertIn("mancano: ObisM, CU, Documento d'identità", riepilogo(stato_documenti("Pensionato", docs)))
+        self.assertIn("mancano: ObisM, CU, Documento d'identità, Estratto contributivo", riepilogo(stato_documenti("Pensionato", docs)))
         self.assertEqual(documenti_estranei("Pensionato", docs), ["Busta paga"])
+
+    def test_estratto_richiesto_per_tutti(self):
+        for nome, info in SETTORI.items():
+            self.assertTrue(any(v.chiave == "estratto" and v.richiesto for v in info["documenti"]), nome)
 
     def test_autonomo(self):
         stati = stato_documenti("Autonomo", [doc("Modello Redditi PF (ex Unico)")])

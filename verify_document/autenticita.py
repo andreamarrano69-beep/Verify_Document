@@ -199,7 +199,10 @@ def analizza_pdf(percorso: str | Path, report: Report | None = None) -> list[Ind
     software = list(dict.fromkeys(software))
     if not software:
         indizi.append(Indizio("Programma di creazione", Esito.ATTENZIONE,
-                              "Metadati assenti: spesso rimossi da strumenti di modifica o conversione", 1))
+                              "Il PDF non dice con quale programma è stato creato: queste informazioni nascoste "
+                              "(metadati) di solito ci sono nei PDF dei programmi paghe e vengono tolte da siti o "
+                              "programmi che uniscono, comprimono o modificano i PDF. Non prova un'alterazione: "
+                              "se possibile chiedere il file originale", 1))
     else:
         classificati = [(s, _classifica(s)) for s in software]
         peggiore = max(classificati, key=lambda x: x[1][2] if x[1] else 0)
@@ -241,7 +244,12 @@ def analizza_pdf(percorso: str | Path, report: Report | None = None) -> list[Ind
             indizi.append(Indizio("Data creazione / periodo", Esito.INFO,
                                   f"File creato il {creazione:%d/%m/%Y}, molto dopo il periodo: probabile ristampa"))
     else:
-        indizi.append(Indizio("Date del file", Esito.ATTENZIONE, "Data di creazione assente", 1))
+        indizi.append(Indizio("Date del file", Esito.ATTENZIONE,
+                              "Data di creazione assente: il PDF non dice quando è stato creato. I PDF dei programmi "
+                              "paghe di solito la riportano; manca quando il file è passato da siti o programmi che "
+                              "uniscono, comprimono o modificano i PDF (es. iLovePDF). Non prova un'alterazione, ma "
+                              "il file non è l'originale: se possibile chiedere quello scaricato dal portale del "
+                              "datore di lavoro o ricevuto dall'ufficio paghe. Per vederlo: Acrobat Reader → Ctrl+D", 1))
 
     # 3. Salvataggi successivi ------------------------------------------------------------
     n_eof = len(re.findall(rb"%%EOF", raw))

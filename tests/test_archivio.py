@@ -33,7 +33,9 @@ class TestArchivio(unittest.TestCase):
         _, r = analizza_documento(p)
         copia, nuova = archivio.archivia(p, r, self.arch)
         self.assertTrue(nuova)
-        self.assertEqual(copia.parent.name, "RSSMRA80A01H501U - ROSSI MARIO")
+        self.assertEqual(copia.parent.parent.name, "ROSSI MARIO")   # cartella del cliente
+        self.assertEqual(copia.parent.name, "Buste paga")              # sottocartella del prodotto
+        self.assertEqual((copia.parent.parent / archivio.FILE_CF).read_text(), "RSSMRA80A01H501U")
         self.assertEqual(copia.name, "Busta paga - Ottobre 2026 - [Untitled]_2023012715060859.txt")
         self.assertTrue(p.exists())  # l'originale resta dov'era
 
@@ -55,11 +57,12 @@ class TestArchivio(unittest.TestCase):
         cu = self._copia_scansione("cu_esempio.txt", "c.txt")
         c1, _ = archivio.archivia(busta, analizza_documento(busta)[1], self.arch)
         c2, _ = archivio.archivia(cu, analizza_documento(cu)[1], self.arch)
-        self.assertEqual(c1.parent, c2.parent)  # stesso cliente RSSMRA80A01H501U
+        self.assertEqual(c1.parent.parent, c2.parent.parent)  # stesso cliente RSSMRA80A01H501U
+        self.assertEqual((c1.parent.name, c2.parent.name), ("Buste paga", "CU"))
         from verify_document.report import Report
 
         c3, _ = archivio.archivia(busta, Report("Documento"), self.arch)
-        self.assertEqual(c3.parent.name, archivio.SENZA_CF)
+        self.assertEqual(c3.parent.parent.name, archivio.SENZA_CF)
 
     def test_file_gia_in_archivio_non_ricopiato(self):
         p = self._copia_scansione("cu_esempio.txt", "c.txt")
@@ -80,8 +83,34 @@ class TestArchivio(unittest.TestCase):
             dove = archivio.elimina(copia, self.arch)
         self.assertEqual(dove, "eliminato definitivamente")
         self.assertFalse(copia.exists())
-        self.assertFalse(copia.parent.exists())  # cartella cliente vuota rimossa
+        self.assertFalse(copia.parent.exists())          # sottocartella vuota rimossa
+        self.assertFalse(copia.parent.parent.exists())   # e cartella cliente rimasta senza documenti
         self.assertTrue(p.exists())
+
+    def test_omonimi_separati_e_nome_letto_diversamente(self):
+        from verify_document.report import Report
+
+        p = self._copia_scansione("cu_esempio.txt", "c.txt")
+        r1 = Report("Certificazione Unica (CU)", {"codice_fiscale_dipendente": "RSSMRA80A01H501U",
+                                                  "nominativo": "ROSSI MARIO"})
+        r2 = Report("Certificazione Unica (CU)", {"codice_fiscale_dipendente": "RSSMRA85B01F205Z",
+                                                  "nominativo": "ROSSI MARIO"})
+        r3 = Report("Busta paga", {"codice_fiscale_dipendente": "RSSMRA80A01H501U", "nominativo": "ROSSI MARI0"})
+        c1, _ = archivio.archivia(p, r1, self.arch)
+        p.write_text("altro contenuto", encoding="utf-8")
+        c2, _ = archivio.archivia(p, r2, self.arch)
+        p.write_text("terzo contenuto", encoding="utf-8")
+        c3, _ = archivio.archivia(p, r3, self.arch)
+        self.assertEqual(c1.parent.parent.name, "ROSSI MARIO")
+        self.assertEqual(c2.parent.parent.name, "ROSSI MARIO (RSSMRA85B01F205Z)")  # omonimo
+        self.assertEqual(c3.parent.parent.name, "ROSSI MARIO")  # stesso CF: stessa cartella anche se letto male
+
+    def test_categorie(self):
+        from verify_document.report import Report
+
+        self.assertEqual(archivio.categoria(Report("Carta d'identità elettronica")), archivio.CATEGORIA_IDENTITA)
+        self.assertEqual(archivio.categoria(Report("Certificato di pensione (ObisM)")), "ObisM")
+        self.assertEqual(archivio.categoria(Report("Modello Redditi PF (ex Unico)")), "Modello Redditi")
 
     def test_data_documento(self):
         self.assertEqual(archivio.data_documento(analizza_documento(ESEMPI / "confronto/busta_09_settembre_2026.txt")[1]),

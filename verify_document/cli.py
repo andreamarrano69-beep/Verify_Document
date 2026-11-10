@@ -82,6 +82,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="confronta tra loro i documenti (stesso cliente, buste paga consecutive, ...)")
     parser.add_argument("--pdf", metavar="FILE.pdf",
                         help="crea il report PDF (con il confronto se i documenti sono più di uno)")
+    parser.add_argument("--dati-in-chiaro", action="store_true",
+                        help="nel report PDF lascia visibili i dati personali (per default sono oscurati)")
     parser.add_argument("--version", action="version", version=__version__)
     args = parser.parse_args(argv)
     for flusso in (sys.stdout, sys.stderr):  # console Windows non UTF-8: niente errori sui simboli ✔ ✘
@@ -127,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
         from .report_pdf import genera_report_pdf
 
         esito_confronto = confronta(analizzati) if len(analizzati) >= 2 else None
-        genera_report_pdf(args.pdf, analizzati, esito_confronto, impostazioni.carica())
+        genera_report_pdf(args.pdf, analizzati, esito_confronto, impostazioni.carica(),
+                          oscura=False if args.dati_in_chiaro else None)
         print(f"Report PDF salvato in {args.pdf}", file=sys.stderr)
     return codice_uscita

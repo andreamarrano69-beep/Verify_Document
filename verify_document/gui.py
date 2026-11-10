@@ -728,7 +728,7 @@ class App:
                                 "(es. più buste paga, carta d'identità, Modello Redditi).", parent=self.root)
             return
         esito = confronta(validi)
-        FinestraConfronto(self.root, esito)
+        FinestraConfronto(self.root, esito, validi)
         self.var_stato.set(f"Confronto tra {len(validi)} documenti: {esito.report.esito_globale.value}")
 
     def _validi(self) -> list[tuple[str, Report]]:
@@ -744,13 +744,18 @@ class App:
                                             initialfile=f"report_verifica.{formato}", filetypes=tipi)
         if not dest:
             return
+        documenti = [(r.percorso.name, r.report) for r in validi]
+        if _oscura_esportazioni():
+            from .anonimizza import oscura_documenti
+
+            documenti, _ = oscura_documenti(documenti)
         if formato == "json":
-            dati = [{"file": r.percorso.name, **r.report.to_dict()} for r in validi]
+            dati = [{"file": nome, **report.to_dict()} for nome, report in documenti]
             contenuto = json.dumps(dati, ensure_ascii=False, indent=2)
         else:
-            contenuto = "\n".join(report_testuale(r.percorso.name, r.report) for r in validi)
+            contenuto = "\n".join(report_testuale(nome, report) for nome, report in documenti)
         Path(dest).write_text(contenuto, encoding="utf-8")
-        self.var_stato.set(f"Report salvato in {dest}")
+        self.var_stato.set(f"Report salvato in {dest}" + (" (dati personali oscurati)" if _oscura_esportazioni() else ""))
 
     def esporta_pdf(self) -> None:
         from datetime import date
@@ -775,7 +780,8 @@ class App:
                    "codice_fiscale_contribuente", "codice_fiscale_pensionato") if r.dati.get(k)), "cliente")
         dest = filedialog.asksaveasfilename(
             title="Salva report PDF", defaultextension=".pdf", filetypes=[("PDF", "*.pdf")],
-            initialfile=f"report_{cf}_{date.today():%Y%m%d}.pdf")
+            initialfile=(f"report_cliente_{date.today():%Y%m%d}.pdf" if _oscura_esportazioni()
+                         else f"report_{cf}_{date.today():%Y%m%d}.pdf"))
         if not dest:
             return
         try:
@@ -798,6 +804,12 @@ class App:
         finestra = FinestraImpostazioni(self.root)
         if attendi:
             self.root.wait_window(finestra.win)
+
+
+def _oscura_esportazioni() -> bool:
+    from . import impostazioni
+
+    return impostazioni.carica().get("oscura_dati_esportati", "1") != "0"
 
 
 def apri_con_programma_predefinito(percorso: str) -> None:
@@ -865,6 +877,14 @@ class FinestraImpostazioni:
                 row=r, column=2, padx=(6, 0), pady=(6, 0))
             ttk.Label(corpo, text=suggerimento, foreground="#666").grid(row=r + 1, column=1, columnspan=2, sticky="w")
         riga += 4
+        self.var_oscura = tk.BooleanVar(value=dati.get("oscura_dati_esportati", "1") != "0")
+        ttk.Checkbutton(corpo, variable=self.var_oscura,
+                        text="Oscura i dati personali in report PDF ed esportazioni (consigliato)").grid(
+            row=riga + 2, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        ttk.Label(corpo, text="Nome → iniziali, codice fiscale, data e luogo di nascita, numeri di documento e IBAN "
+                  "oscurati. Sullo schermo i dati restano visibili.", foreground="#666", wraplength=560).grid(
+            row=riga + 3, column=0, columnspan=3, sticky="w")
+        riga += 2
         ttk.Label(corpo, text=f"Salvate in: {impostazioni.FILE}", foreground="#666").grid(
             row=riga + 2, column=0, columnspan=3, sticky="w", pady=(8, 0))
         pulsanti = ttk.Frame(corpo)
@@ -895,6 +915,7 @@ class FinestraImpostazioni:
                     messagebox.showwarning("Cartella", f"Cartella non valida:\n{dati[chiave]}", parent=self.win)
                     return
         dati["note"] = self.note.get("1.0", "end").strip()
+        dati["oscura_dati_esportati"] = "1" if self.var_oscura.get() else "0"
         if dati["logo"] and not Path(dati["logo"]).is_file():
             messagebox.showwarning("Logo", "Il file del logo non esiste.", parent=self.win)
             return
@@ -950,6 +971,7 @@ class FinestraArchivio:
         self.albero.column("data", width=150, anchor="center")
         self.albero.column("dimensione", width=100, anchor="e")
         self.albero.tag_configure("cliente", font=("Segoe UI", 10, "bold"))
+        self.albero.tag_configure("categoria", font=("Segoe UI", 9, "bold"), foreground="#1a5a96")
         App._con_scrollbar(corpo, self.albero)
         self.albero.bind("<Double-1>", lambda _e: self.apri_nel_programma())
         self.albero.bind("<Delete>", lambda _e: self.elimina())
@@ -971,24 +993,40 @@ class FinestraArchivio:
         clienti: dict[str, list] = {}
         for v in voci:
             clienti.setdefault(v.cliente or "(senza cartella cliente)", []).append(v)
-        for cliente, file in clienti.items():
-            ultimo = max(f.archiviato_il for f in file)
+
+        def riepilogo(file):
             periodi = [f.periodo for f in file if f.periodo]
-            recente = max(periodi) if periodi else date.min
+            return (max(f.archiviato_il for f in file), sum(f.dimensione for f in file),
+                    max(periodi) if periodi else date.min)
+
+        for cliente, file in clienti.items():
+            ultimo, dimensione, recente = riepilogo(file)
             iid_cliente = f"cliente::{cliente}"
             self.albero.insert("", "end", iid=iid_cliente, text=f"{cliente}   ({len(file)})",
                                values=("", f"{ultimo:%d/%m/%Y %H:%M}", ""), tags=("cliente",),
                                open=bool(filtro) or iid_cliente in aperti or len(clienti) <= 3)
             self.voci[iid_cliente] = (self.archivio / cliente if cliente != "(senza cartella cliente)" else None,
-                                      ultimo, sum(f.dimensione for f in file), cliente.lower(), recente)
+                                      ultimo, dimensione, cliente.lower(), recente)
+            # sottocartelle per prodotto (Buste paga, CU, ...)
+            per_categoria: dict[str, list] = {}
             for f in file:
-                iid = str(f.percorso)
-                kb = max(1, round(f.dimensione / 1024))
-                self.albero.insert(iid_cliente, "end", iid=iid, text=f.percorso.name,
-                                   values=(f.testo_periodo, f"{f.archiviato_il:%d/%m/%Y %H:%M}",
-                                           f"{kb:,} KB".replace(",", ".")))
-                self.voci[iid] = (f.percorso, f.archiviato_il, f.dimensione, f.percorso.name.lower(),
-                                  f.periodo or date.min)
+                per_categoria.setdefault(f.categoria, []).append(f)
+            for cat, file_cat in per_categoria.items():
+                genitore = iid_cliente
+                if cat:
+                    genitore = f"categoria::{cliente}/{cat}"
+                    u, dim, rec = riepilogo(file_cat)
+                    self.albero.insert(iid_cliente, "end", iid=genitore, text=f"📁 {cat}   ({len(file_cat)})",
+                                       values=("", f"{u:%d/%m/%Y %H:%M}", ""), tags=("categoria",), open=True)
+                    self.voci[genitore] = (self.archivio / cliente / cat, u, dim, cat.lower(), rec)
+                for f in file_cat:
+                    iid = str(f.percorso)
+                    kb = max(1, round(f.dimensione / 1024))
+                    self.albero.insert(genitore, "end", iid=iid, text=f.percorso.name,
+                                       values=(f.testo_periodo, f"{f.archiviato_il:%d/%m/%Y %H:%M}",
+                                               f"{kb:,} KB".replace(",", ".")))
+                    self.voci[iid] = (f.percorso, f.archiviato_il, f.dimensione, f.percorso.name.lower(),
+                                      f.periodo or date.min)
         self.ordina(*self.ordinamento)
         totale = len(voci)
         self.stato.set(f"{totale} documenti di {len(clienti)} clienti" + (" (filtrati)" if filtro else "")
@@ -1002,21 +1040,28 @@ class FinestraArchivio:
             decrescente = self.ordinamento[1]
         self.ordinamento = (colonna, decrescente)
         indice = {"#0": 3, "data": 1, "dimensione": 2, "periodo": 4}[colonna]
-        for genitore in ("", *self.albero.get_children()):
-            figli = sorted(self.albero.get_children(genitore), key=lambda i: self.voci[i][indice], reverse=decrescente)
+
+        def ordina_livello(genitore):
+            figli = self.albero.get_children(genitore)
+            if colonna == "#0" or genitore == "" or all(not i.startswith("categoria::") for i in figli):
+                figli = sorted(figli, key=lambda i: self.voci[i][indice], reverse=decrescente)
+            else:  # le sottocartelle dei prodotti restano in ordine alfabetico
+                figli = sorted(figli, key=lambda i: self.voci[i][3])
             for n, iid in enumerate(figli):
                 self.albero.move(iid, genitore, n)
+                ordina_livello(iid)
+
+        ordina_livello("")
         for col, titolo in self.titoli.items():
             self.albero.heading(col, text=titolo + ((" ▼" if decrescente else " ▲") if col == colonna else ""))
 
+    def _foglie(self, iid: str) -> list[Path]:
+        if not iid.startswith(("cliente::", "categoria::")):
+            return [Path(iid)]
+        return [f for figlio in self.albero.get_children(iid) for f in self._foglie(figlio)]
+
     def _selezionati(self) -> list[Path]:
-        file = []
-        for iid in self.albero.selection():
-            if iid.startswith("cliente::"):
-                file += [Path(c) for c in self.albero.get_children(iid)]
-            else:
-                file.append(Path(iid))
-        return list(dict.fromkeys(file))
+        return list(dict.fromkeys(f for iid in self.albero.selection() for f in self._foglie(iid)))
 
     def apri_nel_programma(self) -> None:
         file = self._selezionati()
@@ -1043,18 +1088,18 @@ class FinestraArchivio:
         bersagli = []
         for iid in sel:
             p = self.voci[iid][0]
-            if iid.startswith("cliente::"):
+            if iid.startswith(("cliente::", "categoria::")):
                 if p is not None:
                     bersagli.append(p)
                 else:
-                    bersagli += [Path(c) for c in self.albero.get_children(iid)]
+                    bersagli += self._foglie(iid)
             elif not any(str(Path(iid)).startswith(str(b)) for b in bersagli if b.is_dir()):
                 bersagli.append(Path(iid))
         n_file = len(self._selezionati())
-        clienti = [b.name for b in bersagli if b.is_dir()]
+        cartelle = [b.relative_to(self.archivio).as_posix() for b in bersagli if b.is_dir()]
         testo = f"Eliminare {n_file} documenti dall'archivio?"
-        if clienti:
-            testo += "\n\nCartelle cliente intere: " + ", ".join(clienti)
+        if cartelle:
+            testo += "\n\nCartelle intere: " + ", ".join(cartelle)
         testo += "\n\nI file vanno nel Cestino di Windows (recuperabili). Gli originali non vengono toccati."
         if not messagebox.askyesno("Elimina dall'archivio", testo, icon="warning", parent=self.win):
             return
@@ -1083,8 +1128,9 @@ class FinestraConfronto:
                ("progressivo_imponibile_fiscale", "Progressivo imp.", 130, "e"), ("esito", "Esito busta", 110, "center"),
                ("file", "File", 220, "w")]
 
-    def __init__(self, parent: tk.Tk, esito):
+    def __init__(self, parent: tk.Tk, esito, documenti=None):
         self.esito = esito
+        self.documenti = documenti or []
         r = esito.report
         self.win = tk.Toplevel(parent)
         self.win.title("Confronto tra documenti")
@@ -1162,10 +1208,15 @@ class FinestraConfronto:
                                             filetypes=[("Testo", "*.txt"), ("JSON", "*.json")])
         if not dest:
             return
+        esito = self.esito
+        if _oscura_esportazioni():
+            from .anonimizza import oscura_documenti
+
+            _, esito = oscura_documenti(self.documenti, esito)
         if dest.lower().endswith(".json"):
-            contenuto = json.dumps(self.esito.report.to_dict(), ensure_ascii=False, indent=2)
+            contenuto = json.dumps(esito.report.to_dict(), ensure_ascii=False, indent=2)
         else:
-            contenuto = confronto_testuale(self.esito)
+            contenuto = confronto_testuale(esito)
         Path(dest).write_text(contenuto, encoding="utf-8")
 
 

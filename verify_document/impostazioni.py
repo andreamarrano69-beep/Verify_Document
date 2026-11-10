@@ -24,6 +24,7 @@ PREDEFINITE = {
     "ultima_cartella": "",           # ultima cartella usata (se cartella_apertura è vuota)
     "archivio": "",                  # cartella dell'archivio documenti (vuota = predefinita)
     "archivia_automaticamente": "1",  # "1" = salva una copia dei documenti aperti
+    "oscura_dati_esportati": "1",     # "1" = report PDF ed esportazioni senza dati personali
 }
 
 

@@ -42,7 +42,7 @@ class TestReportPdf(unittest.TestCase):
         docs = [(p.name, analizza_documento(p)[1]) for p in sorted((ESEMPI / "pensionato").glob("*.txt"))]
         imp = {"studio": "Studio Prova S.r.l.", "indirizzo": "Via Roma 1", "contatti": "06 123456",
                "partita_iva": "12345678903", "operatore": "Mario Bianchi", "logo": str(logo),
-               "note": "Nota personalizzata dello studio"}
+               "note": "Nota personalizzata dello studio", "oscura_dati_esportati": "0"}
         out = genera_report_pdf(self.dir / "r.pdf", docs, confronta(docs), imp)
         t = testo_pdf(out)
         for atteso in ("Studio Prova S.r.l.", "Report di verifica documenti", "BIANCHI GIUSEPPE",
@@ -53,6 +53,17 @@ class TestReportPdf(unittest.TestCase):
             self.assertIn(atteso, t)
         for vietato in ("−", "→", "↔", "≈"):  # convertiti per i font standard del PDF
             self.assertNotIn(vietato, t)
+
+    def test_dati_personali_oscurati_per_default(self):
+        from verify_document.report_pdf import genera_report_pdf
+
+        docs = [(p.name, analizza_documento(p)[1]) for p in sorted((ESEMPI / "pensionato").glob("*.txt"))]
+        t = testo_pdf(genera_report_pdf(self.dir / "r.pdf", docs, confronta(docs), {}))
+        for vietato in ("BIANCHI", "GIUSEPPE", "BNCGPP55A10H501F"):
+            self.assertNotIn(vietato, t)
+        self.assertIn("Dati personali", t)
+        self.assertIn("XXXXXX00X00X000X", t)
+        self.assertIn("€ 1.333,00", t)  # gli importi restano
 
     def test_senza_impostazioni_un_documento(self):
         from verify_document.report_pdf import genera_report_pdf
@@ -70,7 +81,8 @@ class TestReportPdf(unittest.TestCase):
         import io
 
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            main([str(p) for p in sorted((ESEMPI / "confronto").glob("*.txt"))] + ["--pdf", str(out)])
+            main([str(p) for p in sorted((ESEMPI / "confronto").glob("*.txt"))] + ["--pdf", str(out),
+                                                                                  "--dati-in-chiaro"])
         t = testo_pdf(out)
         self.assertIn("ROSSI MARIO", t)
         self.assertIn("Andamento mese per mese", t)

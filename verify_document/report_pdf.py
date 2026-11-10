@@ -92,8 +92,18 @@ def _cliente(documenti: list[tuple[str, Report]]) -> str:
 
 
 def genera_report_pdf(destinazione: str | Path, documenti: list[tuple[str, Report]],
-                      confronto=None, impostazioni: dict | None = None) -> Path:
-    """Crea il PDF. ``documenti``: [(nome file, Report)]; ``confronto``: EsitoConfronto o None."""
+                      confronto=None, impostazioni: dict | None = None, oscura: bool | None = None) -> Path:
+    """Crea il PDF. ``documenti``: [(nome file, Report)]; ``confronto``: EsitoConfronto o None.
+
+    ``oscura``: dati personali oscurati (nome → iniziali, codice fiscale, data di nascita, numeri di documento);
+    se non indicato segue l'impostazione "oscura_dati_esportati" (attiva per default).
+    """
+    if oscura is None:
+        oscura = (impostazioni or {}).get("oscura_dati_esportati", "1") != "0"
+    if oscura:
+        from .anonimizza import oscura_documenti
+
+        documenti, confronto = oscura_documenti(documenti, confronto)
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_RIGHT
     from reportlab.lib.pagesizes import A4
@@ -186,6 +196,8 @@ def genera_report_pdf(destinazione: str | Path, documenti: list[tuple[str, Repor
             f"<b>Documenti esaminati:</b> {len(documenti)}"]
     if imp.get("operatore"):
         info.append(f"<b>Operatore:</b> {_t(imp['operatore'])}")
+    if oscura:
+        info.append("<b>Dati personali oscurati</b>")
     storia += [Paragraph(" &nbsp;&nbsp;|&nbsp;&nbsp; ".join(info), st["n"]), Spacer(1, 4 * mm)]
 
     # --- 2. Esito complessivo -------------------------------------------------------------

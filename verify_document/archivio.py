@@ -106,17 +106,56 @@ def descrizione_periodo(report: Report | None) -> str:
     return ""
 
 
+# Sottocartelle per prodotto, dentro la cartella del cliente
+CATEGORIE = {
+    "Busta paga": "Buste paga",
+    "Certificazione Unica (CU)": "CU",
+    "Modello Redditi PF (ex Unico)": "Modello Redditi",
+    "Cedolino pensione": "Cedolini pensione",
+    "Certificato di pensione (ObisM)": "ObisM",
+    "Estratto contributivo": "Estratti contributivi",
+}
+CATEGORIA_IDENTITA = "Documenti identità"
+CATEGORIA_ALTRO = "Altri documenti"
+FILE_CF = ".codice_fiscale"  # file nascosto nella cartella del cliente: lega la cartella al codice fiscale
+
+
+def categoria(report: Report | None) -> str:
+    if report is None:
+        return CATEGORIA_ALTRO
+    t = report.tipo_documento
+    if t in CATEGORIE:
+        return CATEGORIE[t]
+    if any(p in t for p in ("identità", "Patente", "Passaporto", "Tessera", "Documento anagrafico")):
+        return CATEGORIA_IDENTITA
+    return CATEGORIA_ALTRO
+
+
+def _cf_della_cartella(cartella: Path) -> str | None:
+    try:
+        return (cartella / FILE_CF).read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
 def nome_cartella_cliente(report: Report | None, archivio: Path) -> str:
+    """Cartella del cliente: "COGNOME NOME" (o il codice fiscale se il nome non è leggibile).
+
+    Una cartella già legata allo stesso codice fiscale viene sempre riusata (anche se il nome è stato letto in
+    modo diverso); un omonimo con codice fiscale diverso riceve il codice fiscale tra parentesi.
+    """
     cf = codice_fiscale(report)
     if not cf:
         return SENZA_CF
-    # se esiste già una cartella per questo CF la riusa (anche se il nome è stato letto diversamente)
     if archivio.is_dir():
         for c in archivio.iterdir():
-            if c.is_dir() and c.name.startswith(cf):
+            if c.is_dir() and (_cf_della_cartella(c) == cf or c.name.startswith(cf)):
                 return c.name
-    nome = nominativo(report)
-    return _pulisci(f"{cf} - {nome}" if nome else cf)
+    nome = _pulisci(nominativo(report) or cf)
+    cartella = archivio / nome
+    if cartella.exists() and _cf_della_cartella(cartella) not in (None, cf):
+        nome = _pulisci(f"{nome} ({cf})")  # omonimo
+    return nome
 
 
 def nome_archiviato(originale: Path, report: Report | None) -> str:
@@ -150,17 +189,22 @@ def e_in_archivio(percorso: Path, archivio: Path) -> bool:
 
 
 def archivia(percorso: Path, report: Report | None, archivio: Path) -> tuple[Path, bool]:
-    """Copia il file nell'archivio. Restituisce (percorso della copia, True se è stata creata ora)."""
+    """Copia il file in archivio/<cliente>/<prodotto>/. Restituisce (copia, True se creata ora)."""
     percorso = Path(percorso)
     if e_in_archivio(percorso, archivio):
         return percorso, False
-    cartella = archivio / nome_cartella_cliente(report, archivio)
-    cartella.mkdir(parents=True, exist_ok=True)
+    cliente = archivio / nome_cartella_cliente(report, archivio)
+    cliente.mkdir(parents=True, exist_ok=True)
+    cf = codice_fiscale(report)
+    if cf and not (cliente / FILE_CF).exists():
+        (cliente / FILE_CF).write_text(cf, encoding="utf-8")
     impronta = _impronta(percorso)
-    for esistente in cartella.iterdir():  # stesso contenuto già archiviato
-        if esistente.is_file() and esistente.stat().st_size == percorso.stat().st_size \
-                and _impronta(esistente) == impronta:
+    for esistente in cliente.rglob("*"):  # stesso contenuto già archiviato (in qualunque sottocartella)
+        if esistente.is_file() and not esistente.name.startswith(".") \
+                and esistente.stat().st_size == percorso.stat().st_size and _impronta(esistente) == impronta:
             return esistente, False
+    cartella = cliente / categoria(report)
+    cartella.mkdir(exist_ok=True)
     nome = nome_archiviato(percorso, report)
     destinazione = cartella / nome
     n = 2
@@ -179,6 +223,7 @@ class VoceArchivio:
     archiviato_il: datetime
     periodo: date | None = None   # periodo del documento, ricavato dal nome dato in archivio
     testo_periodo: str = ""
+    categoria: str = ""           # sottocartella del prodotto (Buste paga, CU, ...)
 
 
 def periodo_da_nome(nome: str) -> tuple[date | None, str]:
@@ -198,15 +243,29 @@ def elenco(archivio: Path) -> list[VoceArchivio]:
         return voci
     for f in archivio.rglob("*"):
         if f.is_file() and not f.name.startswith("."):
-            cliente = f.parent.name if f.parent != archivio else ""
+            parti = f.relative_to(archivio).parts
+            cliente = parti[0] if len(parti) > 1 else ""
+            cat = parti[1] if len(parti) > 2 else ""
             st = f.stat()
             periodo, testo = periodo_da_nome(f.name)
-            voci.append(VoceArchivio(f, cliente, st.st_size, datetime.fromtimestamp(st.st_mtime), periodo, testo))
+            voci.append(VoceArchivio(f, cliente, st.st_size, datetime.fromtimestamp(st.st_mtime), periodo, testo,
+                                     cat))
     return voci
 
 
+def _togli_cartelle_vuote(cartella: Path, archivio: Path) -> None:
+    """Toglie le sottocartelle rimaste vuote e la cartella cliente rimasta con il solo file del codice fiscale."""
+    while cartella != archivio and e_in_archivio(cartella, archivio) and cartella.is_dir():
+        contenuto = [c for c in cartella.iterdir() if c.name != FILE_CF]
+        if contenuto:
+            break
+        (cartella / FILE_CF).unlink(missing_ok=True)
+        cartella.rmdir()
+        cartella = cartella.parent
+
+
 def elimina(percorso: Path, archivio: Path) -> str:
-    """Elimina un file o una cartella cliente dell'archivio. Restituisce dove è finito."""
+    """Elimina un file, una sottocartella o una cartella cliente dell'archivio. Restituisce dove è finito."""
     percorso = Path(percorso)
     if not e_in_archivio(percorso, archivio) or percorso.resolve() == archivio.resolve():
         raise ValueError("Si possono eliminare solo documenti dentro l'archivio del programma")
@@ -222,6 +281,4 @@ def elimina(percorso: Path, archivio: Path) -> str:
             percorso.unlink()
         return "eliminato definitivamente"
     finally:
-        cartella = percorso.parent  # cartella cliente rimasta vuota: si toglie
-        if cartella != archivio and cartella.is_dir() and not any(cartella.iterdir()):
-            cartella.rmdir()
+        _togli_cartelle_vuote(percorso.parent, archivio)

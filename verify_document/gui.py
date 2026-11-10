@@ -27,6 +27,104 @@ from .estrazione import ErroreEstrazione
 from .report import SIMBOLI, Esito, Report, etichetta_campo, formatta_valore, report_testuale, sintesi
 from .validators import formatta_euro
 
+# --- adattamento allo schermo ------------------------------------------------------------------
+# Con lo zoom di Windows (es. 150% sui portatili da 14") i caratteri si ingrandiscono da soli, le misure in
+# pixel no: px() le moltiplica per lo stesso fattore. Sugli schermi piccoli (meno di 1500×880 punti
+# effettivi) il programma usa la modalità COMPATTO: caratteri un punto più piccoli e testi più brevi.
+SCALA = 1.0
+COMPATTO = False
+
+
+def px(n: float) -> int:
+    return int(round(n * SCALA))
+
+
+def _f(dimensione: int, stile: str = "", famiglia: str = "Segoe UI") -> tuple:
+    if COMPATTO and dimensione > 8:
+        dimensione -= 2 if dimensione >= 16 else 1
+    return (famiglia, dimensione, stile) if stile else (famiglia, dimensione)
+
+
+def breve(lungo: str, corto: str) -> str:
+    return corto if COMPATTO else lungo
+
+
+def misura_schermo(root: tk.Misc) -> tuple[int, int]:
+    """Imposta SCALA e COMPATTO; restituisce la dimensione dello schermo in punti effettivi."""
+    import os
+
+    global SCALA, COMPATTO
+    try:
+        SCALA = max(1.0, float(root.tk.call("tk", "scaling")) / (96 / 72))
+    except (tk.TclError, ValueError):
+        SCALA = 1.0
+    larghezza = int(root.winfo_screenwidth() / SCALA)
+    altezza = int(root.winfo_screenheight() / SCALA)
+    scelta = os.environ.get("VERIFY_DOCUMENT_COMPATTO")
+    COMPATTO = scelta == "1" if scelta in ("0", "1") else (larghezza < 1500 or altezza < 880)
+    return larghezza, altezza
+
+
+def adatta_finestra(win: tk.Toplevel, larghezza: int, altezza: int) -> None:
+    """Dimensione della finestra (in punti) ridotta se lo schermo è più piccolo, e centrata."""
+    sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+    w = min(px(larghezza), sw - px(30))
+    h = min(px(altezza), sh - px(90))
+    win.geometry(f"{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 2 - px(20))}")
+    win.minsize(min(w, px(600)), min(h, px(400)))
+
+
+def _dpi_windows() -> None:
+    """Su Windows: caratteri nitidi con lo zoom dello schermo (altrimenti l'immagine viene sfocata)."""
+    import sys
+
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            pass
+
+
+class Flusso(ttk.Frame):
+    """Riga di pulsanti che va a capo quando non c'è abbastanza spazio (schermi piccoli)."""
+
+    def __init__(self, parent, spazio: int = 4, **kw):
+        super().__init__(parent, **kw)
+        self.spazio = spazio
+        self.bind("<Configure>", self._disponi)
+
+    def aggiorna(self) -> None:
+        self.after_idle(self._disponi)
+
+    def _disponi(self, _evento=None) -> None:
+        larghezza = self.winfo_width()
+        if larghezza <= 1:
+            return
+        spazio = px(self.spazio)
+        righe: list[list] = [[]]
+        x = 0
+        for figlio in self.winfo_children():
+            w = figlio.winfo_reqwidth()
+            if x and x + w > larghezza:
+                righe.append([])
+                x = 0
+            righe[-1].append(figlio)
+            x += w + spazio
+        y = 0
+        for riga in righe:
+            alt_riga = max((f.winfo_reqheight() for f in riga), default=0)
+            x = 0
+            for f in riga:  # elementi della riga centrati in verticale
+                f.place(x=x, y=y + (alt_riga - f.winfo_reqheight()) // 2)
+                x += f.winfo_reqwidth() + spazio
+            y += alt_riga + spazio
+        altezza = max(1, y - spazio)
+        if int(str(self.cget("height") or 0)) != altezza:
+            self.configure(height=altezza)
+
+
 TIPI = {
     "Automatico": "auto",
     "Busta paga": "busta",
@@ -128,8 +226,9 @@ class App:
 
         root.title(f"Verify Document {__version__}")
         self._icona()
-        root.geometry("1180x720")
-        root.minsize(900, 560)
+        larghezza, altezza = misura_schermo(root)
+        root.geometry(f"{min(px(1180), root.winfo_screenwidth())}x{min(px(720), root.winfo_screenheight())}")
+        root.minsize(min(px(800), root.winfo_screenwidth()), min(px(500), root.winfo_screenheight()))
         self._massimizza()
         root.protocol("WM_DELETE_WINDOW", self.esci)  # anche la X della finestra chiede conferma
         root.bind("<Control-q>", lambda _e: self.esci())
@@ -145,73 +244,83 @@ class App:
         st = ttk.Style(self.root)
         if "clam" in st.theme_names():
             st.theme_use("clam")
-        st.configure("Treeview", rowheight=26, font=("Segoe UI", 10))
-        st.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"))
-        st.configure("Titolo.TLabel", font=("Segoe UI", 14, "bold"))
-        st.configure("Esito.TLabel", font=("Segoe UI", 12, "bold"), padding=(10, 4))
-        st.configure("Accent.TButton", font=("Segoe UI", 10, "bold"))
-        st.configure("Esci.TButton", font=("Segoe UI", 10, "bold"), foreground="#b3261e")
+        st.configure("Treeview", rowheight=px(24 if COMPATTO else 26), font=_f(10))
+        st.configure("Treeview.Heading", font=_f(10, "bold"))
+        st.configure("Titolo.TLabel", font=_f(14, "bold"))
+        st.configure("Esito.TLabel", font=_f(12, "bold"), padding=(10, 4))
+        st.configure("Accent.TButton", font=_f(10, "bold"))
+        st.configure("Esci.TButton", font=_f(10, "bold"), foreground="#b3261e")
 
     def _costruisci(self) -> None:
         self.settore: str | None = None
         self.home = self._costruisci_home()
         self.principale = ttk.Frame(self.root)
-        # Barra superiore, riga 1: azioni principali
-        barra = ttk.Frame(self.principale, padding=(10, 8, 10, 2))
+        # Barra superiore: azioni principali (vanno a capo se lo schermo è stretto); a destra Impostazioni ed Esci
+        barra = ttk.Frame(self.principale, padding=(px(10), px(6), px(10), px(2)))
         barra.pack(fill="x")
-        ttk.Button(barra, text="🏠  Home", command=self.mostra_home).pack(side="left", padx=(0, 6))
-        ttk.Button(barra, text="📂  Apri documenti…", style="Accent.TButton",
-                   command=self.apri_file).pack(side="left")
-        ttk.Button(barra, text="⇄  Confronta documenti", style="Accent.TButton",
-                   command=self.confronta).pack(side="left", padx=6)
-        ttk.Button(barra, text="📄  Report PDF", style="Accent.TButton",
-                   command=self.esporta_pdf).pack(side="left")
-        menu_esporta = ttk.Menubutton(barra, text="💾  Esporta ▾")
+        destra = ttk.Frame(barra)
+        destra.pack(side="right", anchor="n")
+        ttk.Button(destra, text="⚙  " + breve("Impostazioni", "Impost."), command=self.apri_impostazioni).pack(
+            side="left")
+        ttk.Button(destra, text="⏻  Esci", style="Esci.TButton", command=self.esci).pack(side="left", padx=(6, 0))
+        azioni = Flusso(barra)
+        azioni.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ttk.Button(azioni, text="🏠  Home", command=self.mostra_home)
+        ttk.Button(azioni, text="📂  " + breve("Apri documenti…", "Apri…"), style="Accent.TButton",
+                   command=self.apri_file)
+        ttk.Button(azioni, text="⇄  " + breve("Confronta documenti", "Confronta"), style="Accent.TButton",
+                   command=self.confronta)
+        ttk.Button(azioni, text="📄  Report PDF", style="Accent.TButton", command=self.esporta_pdf)
+        menu_esporta = ttk.Menubutton(azioni, text="💾  Esporta ▾")
         menu = tk.Menu(menu_esporta, tearoff=0)
         menu.add_command(label="Report PDF…", command=self.esporta_pdf)
         menu.add_command(label="Testo (.txt)…", command=lambda: self.esporta("txt"))
         menu.add_command(label="Dati (.json)…", command=lambda: self.esporta("json"))
         menu_esporta["menu"] = menu
-        menu_esporta.pack(side="left", padx=6)
-        ttk.Button(barra, text="🗂  Archivio", command=self.apri_archivio).pack(side="left")
-        ttk.Button(barra, text="🧮  Conteggio estinzione", command=self.apri_estinzione).pack(side="left", padx=6)
-        ttk.Button(barra, text="⏻  Esci", style="Esci.TButton", command=self.esci).pack(side="right")
-        ttk.Separator(barra, orient="vertical").pack(side="right", fill="y", padx=8)
-        ttk.Button(barra, text="⚙  Impostazioni", command=self.apri_impostazioni).pack(side="right")
+        ttk.Button(azioni, text="🗂  Archivio", command=self.apri_archivio)
+        ttk.Button(azioni, text="🧮  " + breve("Conteggio estinzione", "Estinzione"), command=self.apri_estinzione)
+        azioni.aggiorna()
 
         # riga 2: opzioni di analisi
-        opzioni = ttk.Frame(self.principale, padding=(10, 2, 10, 6))
+        opzioni = Flusso(self.principale, padding=(px(10), px(2), px(10), px(4)))
         opzioni.pack(fill="x")
-        ttk.Label(opzioni, text="Tipo di documento:").pack(side="left")
+        riquadro_tipo = ttk.Frame(opzioni)
+        ttk.Label(riquadro_tipo, text=breve("Tipo di documento:", "Tipo:")).pack(side="left")
         self.var_tipo = tk.StringVar(value="Automatico")
-        ttk.Combobox(opzioni, textvariable=self.var_tipo, values=list(TIPI), state="readonly",
-                     width=26).pack(side="left", padx=4)
+        ttk.Combobox(riquadro_tipo, textvariable=self.var_tipo, values=list(TIPI), state="readonly",
+                     width=24).pack(side="left", padx=4)
         self.var_ocr = tk.BooleanVar(value=True)
-        ttk.Checkbutton(opzioni, text="Usa OCR per scansioni/foto", variable=self.var_ocr).pack(
-            side="left", padx=10)
+        ttk.Checkbutton(opzioni, text=breve("Usa OCR per scansioni/foto", "OCR scansioni"), variable=self.var_ocr)
         from . import impostazioni
 
         self.var_archivia = tk.BooleanVar(value=impostazioni.carica()["archivia_automaticamente"] != "0")
-        ttk.Checkbutton(opzioni, text="Salva copia nell'archivio", variable=self.var_archivia,
+        ttk.Checkbutton(opzioni, text=breve("Salva copia nell'archivio", "Copia in archivio"),
+                        variable=self.var_archivia,
                         command=lambda: impostazioni.salva(
-                            {"archivia_automaticamente": "1" if self.var_archivia.get() else "0"})).pack(side="left")
-        ttk.Button(opzioni, text="↻  Rianalizza", command=self.rianalizza).pack(side="left", padx=(10, 0))
-        ttk.Button(opzioni, text="🗑  Svuota", command=self.svuota).pack(side="left", padx=6)
+                            {"archivia_automaticamente": "1" if self.var_archivia.get() else "0"}))
+        ttk.Button(opzioni, text="↻  Rianalizza", command=self.rianalizza)
+        ttk.Button(opzioni, text="🗑  Svuota", command=self.svuota)
+        opzioni.spazio = 10
+        opzioni.aggiorna()
 
         # riga 3: documenti da chiedere per il settore scelto (verdi quando caricati)
         riquadro = tk.Frame(self.principale, bg="#ffffff", highlightthickness=1, highlightbackground="#d0d7de")
         riquadro.pack(fill="x", padx=10, pady=(0, 6))
         testa = tk.Frame(riquadro, bg="#ffffff")
         testa.pack(fill="x", padx=10, pady=(6, 2))
-        self.lbl_settore = tk.Label(testa, text="", bg="#ffffff", fg=BLU, font=("Segoe UI", 13, "bold"))
+        self.lbl_settore = tk.Label(testa, text="", bg="#ffffff", fg=BLU, font=_f(13, "bold"))
         self.lbl_settore.pack(side="left")
-        tk.Label(testa, text="   clic su un documento per caricarlo · verde = caricato, rosso = manca",
-                 bg="#ffffff", fg="#666666", font=("Segoe UI", 9)).pack(side="left")
         ttk.Button(testa, text="Cambia settore", command=self.mostra_home).pack(side="right")
-        self.riquadro_voci = tk.Frame(riquadro, bg="#ffffff")
+        tk.Label(testa, text=breve("   clic su un documento per caricarlo · verde = caricato, rosso = manca",
+                                   "   clic = carica · verde ok, rosso manca"),
+                 bg="#ffffff", fg="#666666", font=_f(9)).pack(side="left")
+        ttk.Style(self.root).configure("Bianco.TFrame", background="#ffffff")
+        self.riquadro_voci = Flusso(riquadro, style="Bianco.TFrame")
         self.riquadro_voci.pack(fill="x", padx=8, pady=2)
-        self.lbl_riepilogo = tk.Label(riquadro, text="", bg="#ffffff", font=("Segoe UI", 10, "bold"), anchor="w")
+        self.lbl_riepilogo = tk.Label(riquadro, text="", bg="#ffffff", font=_f(10, "bold"), anchor="w",
+                                      justify="left")
         self.lbl_riepilogo.pack(fill="x", padx=10, pady=(2, 6))
+        self.lbl_riepilogo.bind("<Configure>", lambda e: self.lbl_riepilogo.configure(wraplength=max(100, e.width)))
 
         corpo = ttk.PanedWindow(self.principale, orient="horizontal")
         corpo.pack(fill="both", expand=True, padx=10, pady=(0, 6))
@@ -227,11 +336,12 @@ class App:
             self.lista.heading(col, text=titolo, command=lambda c=col: self.ordina_lista(c, cambia=True))
         self.ordinamento = ("data", True)  # colonna, decrescente (più recenti in alto)
         self.chiavi_data: dict[str, object] = {}
-        self.lista.column("#0", width=170)
-        self.lista.column("data", width=105)
-        self.lista.column("esito", width=100, anchor="center")
-        self.lista.column("tipo", width=120)
-        self.lista.column("mensile", width=105, anchor="e")
+        # la colonna File si allarga o si stringe con il pannello, le altre restano leggibili
+        self.lista.column("#0", width=px(150 if COMPATTO else 170), minwidth=px(80), stretch=True)
+        self.lista.column("data", width=px(100 if COMPATTO else 105), minwidth=px(70), stretch=False)
+        self.lista.column("esito", width=px(80 if COMPATTO else 100), minwidth=px(60), anchor="center", stretch=False)
+        self.lista.column("tipo", width=px(95 if COMPATTO else 120), minwidth=px(60), stretch=False)
+        self.lista.column("mensile", width=px(95 if COMPATTO else 105), minwidth=px(70), anchor="e", stretch=False)
         for esito, (fg, bg) in COLORI.items():
             self.lista.tag_configure(esito.value, foreground=fg, background=bg)
         self.lista.tag_configure("attesa", foreground="#666")
@@ -263,14 +373,14 @@ class App:
         intestazione_f.pack(fill="x", pady=(6, 2))
         ttk.Label(intestazione_f, text="Fascicolo cliente", style="Titolo.TLabel").pack(side="left")
         ttk.Button(intestazione_f, text="⇄  Confronto completo", command=self.confronta).pack(side="right")
-        self.txt_fascicolo = tk.Text(sx, height=10, wrap="word", font=("Segoe UI", 9), relief="flat",
+        self.txt_fascicolo = tk.Text(sx, height=6 if COMPATTO else 10, wrap="word", font=_f(9), relief="flat",
                                      background="#f4f6f8", padx=8, pady=6, cursor="arrow")
         self.txt_fascicolo.pack(fill="x")
-        for tag, opzioni in {"cliente": {"font": ("Segoe UI", 10, "bold")},
+        for tag, opzioni in {"cliente": {"font": _f(10, "bold")},
                              "presente": {"foreground": "#1e7b34"},
                              "manca": {"foreground": "#8a5a00"},
                              "nota": {"foreground": "#666666"},
-                             **{e.value: {"foreground": COLORI[e][0], "font": ("Segoe UI", 9, "bold")} for e in COLORI}
+                             **{e.value: {"foreground": COLORI[e][0], "font": _f(9, "bold")} for e in COLORI}
                              }.items():
             self.txt_fascicolo.tag_configure(tag, **opzioni)
         self.aggiorna_fascicolo()
@@ -282,14 +392,24 @@ class App:
         intest.pack(fill="x")
         self.lbl_titolo = ttk.Label(intest, text="Nessun documento selezionato", style="Titolo.TLabel")
         self.lbl_titolo.pack(side="left")
-        self.lbl_esito = tk.Label(intest, text="", font=("Segoe UI", 12, "bold"), padx=12, pady=4)
+        self.lbl_esito = tk.Label(intest, text="", font=_f(12, "bold"), padx=12, pady=4)
         self.lbl_esito.pack(side="right")
 
         # Fascia di sintesi: regime / tipo di reddito e importo mensile, in grande
+        st = ttk.Style(self.root)
+        st.configure("Banner.TFrame", background=COLORE_SINTESI)
+        st.configure("Riepilogo.TFrame", background="#f4f6f8")
         self.banner = tk.Frame(dx, bg=COLORE_SINTESI)
-        self.riepilogo = tk.Frame(dx, bg="#f4f6f8", highlightthickness=1,
-                                  highlightbackground="#d0d7de")
-        self.riepilogo.pack(fill="x", pady=(6, 0))
+        self.banner_celle = Flusso(self.banner, spazio=0, style="Banner.TFrame")
+        self.banner_celle.pack(fill="x")
+        self.banner_nota = tk.Label(self.banner, bg=COLORE_SINTESI, fg="#c9dcf2", font=_f(9), anchor="w",
+                                    justify="left")
+        self.banner_nota.pack(fill="x", padx=px(12), pady=(0, px(4)))
+        bordo = tk.Frame(dx, bg="#f4f6f8", highlightthickness=1, highlightbackground="#d0d7de")
+        bordo.pack(fill="x", pady=(6, 0))
+        self.riepilogo = Flusso(bordo, spazio=0, style="Riepilogo.TFrame")
+        self.riepilogo.pack(fill="x")
+        self.riepilogo_bordo = bordo
 
         self.schede = ttk.Notebook(dx)
         self.schede.pack(fill="both", expand=True, pady=(6, 0))
@@ -301,12 +421,12 @@ class App:
         for col, testo, w in [("esito", "", 40), ("controllo", "Controllo", 210),
                               ("dettaglio", "Dettaglio", 560)]:
             self.tab_controlli.heading(col, text=testo)
-            self.tab_controlli.column(col, width=w, anchor="center" if col == "esito" else "w",
+            self.tab_controlli.column(col, width=px(w), anchor="center" if col == "esito" else "w",
                                       stretch=col == "dettaglio")
         for esito, (fg, bg) in COLORI.items():
             self.tab_controlli.tag_configure(esito.value, foreground=fg, background=bg)
         self.tab_controlli.tag_configure("gruppo", foreground="#ffffff", background="#57606a",
-                                         font=("Segoe UI", 9, "bold"))
+                                         font=_f(9, "bold"))
         self._con_scrollbar(f1, self.tab_controlli)
         self.tab_controlli.bind("<Double-1>", self._mostra_dettaglio_controllo)
         self.schede.add(f1, text="  Controlli  ")
@@ -316,8 +436,8 @@ class App:
         self.tab_dati = ttk.Treeview(f2, columns=("campo", "valore"), show="headings")
         self.tab_dati.heading("campo", text="Campo")
         self.tab_dati.heading("valore", text="Valore")
-        self.tab_dati.column("campo", width=260, stretch=False)
-        self.tab_dati.column("valore", width=500)
+        self.tab_dati.column("campo", width=px(260), stretch=False)
+        self.tab_dati.column("valore", width=px(500))
         self.tab_dati.tag_configure("vuoto", foreground="#999")
         self._con_scrollbar(f2, self.tab_dati)
         self.schede.add(f2, text="  Dati estratti  ")
@@ -333,7 +453,7 @@ class App:
         interno.grid(row=1, column=0, columnspan=2, sticky="nsew")
         f3.rowconfigure(1, weight=1)
         f3.columnconfigure(0, weight=1)
-        self.txt = tk.Text(interno, wrap="none", font=("Consolas", 10))
+        self.txt = tk.Text(interno, wrap="none", font=_f(10, famiglia="Consolas"))
         self._con_scrollbar(interno, self.txt, orizzontale=True)
         self.schede.add(f3, text="  Testo letto  ")
         corpo.add(dx, weight=3)
@@ -386,34 +506,48 @@ class App:
         home = tk.Frame(self.root, bg=sfondo)
         centro = tk.Frame(home, bg=sfondo)
         centro.place(relx=0.5, rely=0.45, anchor="center")
-        tk.Label(centro, text="Verify Document", bg=sfondo, fg=BLU, font=("Segoe UI", 34, "bold")).pack()
-        tk.Label(centro, text="Verifica di buste paga, pensioni, CU, Modello Redditi, estratti contributivi e "
-                 "documenti d'identità", bg=sfondo, fg="#444444", font=("Segoe UI", 12)).pack(pady=(2, 0))
+        tk.Label(centro, text="Verify Document", bg=sfondo, fg=BLU, font=_f(34, "bold")).pack()
+        sottotitolo = tk.Label(centro, text="Verifica di buste paga, pensioni, CU, Modello Redditi, estratti "
+                               "contributivi e documenti d'identità", bg=sfondo, fg="#444444", font=_f(12))
+        sottotitolo.pack(pady=(2, 0))
         tk.Label(centro, text="Tutto in locale: nessun dato inviato su internet", bg=sfondo, fg="#777777",
-                 font=("Segoe UI", 10)).pack(pady=(0, 26))
+                 font=_f(10)).pack(pady=(0, px(14 if COMPATTO else 26)))
         tk.Label(centro, text="Scegli il settore del cliente", bg=sfondo, fg="#1f2328",
-                 font=("Segoe UI", 15, "bold")).pack(pady=(0, 12))
+                 font=_f(15, "bold")).pack(pady=(0, px(8 if COMPATTO else 12)))
         griglia = tk.Frame(centro, bg=sfondo)
         griglia.pack()
-        for n, (nome, info) in enumerate(SETTORI.items()):
+        colonne = []
+        for nome, info in SETTORI.items():
+            col = tk.Frame(griglia, bg=sfondo)
             richiesti = ", ".join(v.etichetta for v in info["documenti"] if v.richiesto)
-            b = tk.Button(griglia, text=f"{info['icona']}\n{nome}\n", font=("Segoe UI", 20, "bold"), width=11,
-                          height=3, bg="#ffffff", fg=BLU, activebackground="#e8f0f8", activeforeground=BLU,
-                          relief="flat", bd=0, highlightthickness=2, highlightbackground="#c9d6e3", cursor="hand2",
-                          command=lambda s=nome: self.entra_settore(s))
-            b.grid(row=0, column=n, padx=10, sticky="n")
+            b = tk.Button(col, text=f"{info['icona']}\n{nome}", font=_f(20, "bold"), width=11,
+                          height=2 if COMPATTO else 3, bg="#ffffff", fg=BLU, activebackground="#e8f0f8",
+                          activeforeground=BLU, relief="flat", bd=0, highlightthickness=2,
+                          highlightbackground="#c9d6e3", cursor="hand2", command=lambda s=nome: self.entra_settore(s))
+            b.pack()
             b.bind("<Enter>", lambda _e, w=b: w.configure(bg="#e8f0f8", highlightbackground=BLU))
             b.bind("<Leave>", lambda _e, w=b: w.configure(bg="#ffffff", highlightbackground="#c9d6e3"))
-            tk.Label(griglia, text=info["descrizione"], bg=sfondo, fg="#444444", font=("Segoe UI", 10, "bold"),
-                     wraplength=230).grid(row=1, column=n, pady=(8, 0))
-            tk.Label(griglia, text=richiesti, bg=sfondo, fg="#777777", font=("Segoe UI", 9),
-                     wraplength=230).grid(row=2, column=n, pady=(2, 0))
+            tk.Label(col, text=info["descrizione"], bg=sfondo, fg="#444444", font=_f(10, "bold"),
+                     wraplength=px(220)).pack(pady=(px(6), 0))
+            tk.Label(col, text=richiesti, bg=sfondo, fg="#777777", font=_f(9),
+                     wraplength=px(220)).pack(pady=(2, 0))
+            colonne.append(col)
+
+        def disponi(_evento=None):
+            """4 settori in fila; su finestre strette 2 per riga."""
+            larghezza = home.winfo_width()
+            per_riga = 4 if larghezza >= sum(c.winfo_reqwidth() for c in colonne) + px(120) else 2
+            for n, c in enumerate(colonne):
+                c.grid(row=n // per_riga, column=n % per_riga, padx=px(8), pady=px(6), sticky="n")
+            sottotitolo.configure(wraplength=max(px(300), larghezza - px(60)))
+
+        home.bind("<Configure>", disponi)
         piede = tk.Frame(home, bg=sfondo)
         piede.pack(side="bottom", fill="x", padx=20, pady=16)
         ttk.Button(piede, text="⏻  Esci", style="Esci.TButton", command=self.esci).pack(side="right")
         ttk.Button(piede, text="⚙  Impostazioni", command=self.apri_impostazioni).pack(side="right", padx=8)
         tk.Label(piede, text=f"versione {__version__}", bg=sfondo, fg="#999999",
-                 font=("Segoe UI", 9)).pack(side="left")
+                 font=_f(9)).pack(side="left")
         return home
 
     def mostra_home(self) -> None:
@@ -450,11 +584,12 @@ class App:
             nota = st.voce.nota or ("facoltativo" if not st.voce.richiesto else "")
             if not st.voce.richiesto and st.stato == "facoltativo":
                 nota = f"facoltativo · {st.voce.nota}" if st.voce.nota else "facoltativo"
-            b = tk.Button(self.riquadro_voci, text=f"{st.testo}\n{nota}", justify="left", anchor="w",
-                          font=("Segoe UI", 10, "bold"), fg=fg, bg=bg, activebackground=bg, activeforeground=fg,
+            b = tk.Button(self.riquadro_voci, text=st.testo if COMPATTO else f"{st.testo}\n{nota}",
+                          justify="left", anchor="w",
+                          font=_f(10, "bold"), fg=fg, bg=bg, activebackground=bg, activeforeground=fg,
                           relief="flat", bd=0, highlightthickness=1, highlightbackground=fg, padx=10, pady=4,
                           cursor="hand2", command=lambda t=st.voce.tipo_analisi: self.scansiona_prodotto(t))
-            b.pack(side="left", padx=3, pady=3)
+        self.riquadro_voci.aggiorna()
         testo = riepilogo(stati)
         estranei = documenti_estranei(self.settore, reports)
         if estranei:
@@ -625,26 +760,25 @@ class App:
                                  tags=("vuoto",) if v is None else ())
 
     def _aggiorna_banner(self, r: Report | None) -> None:
-        for w in self.banner.winfo_children():
+        for w in self.banner_celle.winfo_children():
             w.destroy()
         s = sintesi(r) if r else None
         if s is None:
             self.banner.pack_forget()
             return
-        self.banner.pack(fill="x", pady=(6, 0), before=self.riepilogo)
+        self.banner.pack(fill="x", pady=(6, 0), before=self.riepilogo_bordo)
         blocchi = [(s.etichetta, s.categoria or "non determinato", 15),
                    ("Importo mensile lordo", formatta_euro(s.mensile_lordo), 20),
                    ("Importo mensile netto", formatta_euro(s.mensile_netto), 20)]
         for i, (titolo, valore, dim) in enumerate(blocchi):
-            cella = tk.Frame(self.banner, bg=COLORE_SINTESI, padx=16, pady=8)
-            cella.grid(row=0, column=i, sticky="nw")
+            cella = tk.Frame(self.banner_celle, bg=COLORE_SINTESI, padx=px(12 if COMPATTO else 16),
+                             pady=px(5 if COMPATTO else 8))
             tk.Label(cella, text=titolo.upper(), bg=COLORE_SINTESI, fg="#c9dcf2",
-                     font=("Segoe UI", 9, "bold")).pack(anchor="w")
-            tk.Label(cella, text=valore, bg=COLORE_SINTESI, fg="#ffffff", font=("Segoe UI", dim, "bold"),
-                     wraplength=380, justify="left").pack(anchor="w")
-        self.banner.columnconfigure(0, weight=1)
-        tk.Label(self.banner, text=s.nota, bg=COLORE_SINTESI, fg="#c9dcf2",
-                 font=("Segoe UI", 9)).grid(row=1, column=0, columnspan=3, sticky="w", padx=16, pady=(0, 6))
+                     font=_f(9, "bold")).pack(anchor="w")
+            tk.Label(cella, text=valore, bg=COLORE_SINTESI, fg="#ffffff", font=_f(dim, "bold"),
+                     wraplength=px(340), justify="left").pack(anchor="w")
+        self.banner_celle.aggiorna()
+        self.banner_nota.configure(text=s.nota)
 
     def _aggiorna_riepilogo(self, r: Report | None) -> None:
         self._aggiorna_banner(r)
@@ -656,12 +790,13 @@ class App:
                  for k, etichetta in RIEPILOGO.get(r.tipo_documento.split(" ")[0], [])
                  if r.dati.get(k) is not None]
         for i, (etichetta, valore) in enumerate(campi):
-            cella = tk.Frame(self.riepilogo, bg="#f4f6f8", padx=12, pady=6)
-            cella.grid(row=i // 4, column=i % 4, sticky="w")
+            cella = tk.Frame(self.riepilogo, bg="#f4f6f8", padx=px(10 if COMPATTO else 12), pady=px(4 if COMPATTO else 6),
+                             width=px(150))
             tk.Label(cella, text=etichetta.upper(), bg="#f4f6f8", fg="#57606a",
-                     font=("Segoe UI", 8, "bold")).pack(anchor="w")
+                     font=_f(8, "bold")).pack(anchor="w")
             tk.Label(cella, text=valore, bg="#f4f6f8", fg="#1f2328",
-                     font=("Segoe UI", 12, "bold")).pack(anchor="w")
+                     font=_f(12, "bold")).pack(anchor="w")
+        self.riepilogo.aggiorna()
 
     def _mostra_dettaglio_controllo(self, _evento) -> None:
         sel = self.tab_controlli.selection()
@@ -986,7 +1121,7 @@ class FinestraImpostazioni:
         ttk.Entry(corpo, textvariable=self.var["logo"], width=40).grid(row=riga, column=1, sticky="we", pady=3)
         ttk.Button(corpo, text="Scegli…", command=self._scegli_logo).grid(row=riga, column=2, padx=(6, 0))
         ttk.Label(corpo, text="Note in fondo al report").grid(row=riga + 1, column=0, sticky="nw", pady=3)
-        self.note = tk.Text(corpo, width=52, height=4, font=("Segoe UI", 10), wrap="word")
+        self.note = tk.Text(corpo, width=52, height=4, font=_f(10), wrap="word")
         self.note.insert("1.0", dati.get("note", ""))
         self.note.grid(row=riga + 1, column=1, columnspan=2, sticky="we", pady=3)
         from .archivio import cartella_archivio
@@ -1009,7 +1144,7 @@ class FinestraImpostazioni:
                         text="Oscura i dati personali in report PDF ed esportazioni (consigliato)").grid(
             row=riga + 2, column=0, columnspan=3, sticky="w", pady=(10, 0))
         ttk.Label(corpo, text="Nome → iniziali, codice fiscale, data e luogo di nascita, numeri di documento e IBAN "
-                  "oscurati. Sullo schermo i dati restano visibili.", foreground="#666", wraplength=560).grid(
+                  "oscurati. Sullo schermo i dati restano visibili.", foreground="#666", wraplength=px(560)).grid(
             row=riga + 3, column=0, columnspan=3, sticky="w")
         riga += 2
         ttk.Label(corpo, text=f"Salvate in: {impostazioni.FILE}", foreground="#666").grid(
@@ -1082,7 +1217,7 @@ class FinestraEstinzione:
     def __init__(self, parent: tk.Tk):
         self.win = tk.Toplevel(parent)
         self.win.title("Conteggio sommario di estinzione")
-        self.win.geometry("1060x640")
+        adatta_finestra(self.win, 1060, 640)
         self.win.transient(parent)
         sx = ttk.Frame(self.win, padding=14)
         sx.pack(side="left", fill="y")
@@ -1095,7 +1230,7 @@ class FinestraEstinzione:
             e = ttk.Entry(sx, textvariable=self.var[chiave], width=18)
             e.grid(row=1 + i * 2, column=1, sticky="w", padx=(8, 0), pady=(4, 0))
             e.bind("<Return>", lambda _e: self.calcola())
-            ttk.Label(sx, text=aiuto, foreground="#666", font=("Segoe UI", 8)).grid(row=2 + i * 2, column=0,
+            ttk.Label(sx, text=aiuto, foreground="#666", font=_f(8)).grid(row=2 + i * 2, column=0,
                                                                                   columnspan=2, sticky="w")
         self.var_quinto = tk.BooleanVar(value=True)
         r = 1 + len(self.CAMPI) * 2
@@ -1110,10 +1245,10 @@ class FinestraEstinzione:
 
         dx = ttk.Frame(self.win, padding=(0, 14, 14, 14))
         dx.pack(side="left", fill="both", expand=True)
-        self.risultato = tk.Text(dx, wrap="word", font=("Consolas", 10), padx=10, pady=8, background="#f8fafc",
+        self.risultato = tk.Text(dx, wrap="word", font=_f(10, famiglia="Consolas"), padx=10, pady=8, background="#f8fafc",
                                  width=72)
         self.risultato.pack(fill="both", expand=True)
-        self.risultato.tag_configure("totale", font=("Consolas", 11, "bold"), foreground="#1a5a96")
+        self.risultato.tag_configure("totale", font=_f(11, "bold", "Consolas"), foreground="#1a5a96")
         self.risultato.tag_configure("avviso", foreground="#8a5a00")
         self._mostra("Inserisci la rata e almeno due tra decorrenza, scadenza, rate totali e rate residue,\n"
                      "poi premi «Calcola».\n\nCon il TAN (o l'importo finanziato) il programma calcola il capitale "
@@ -1192,7 +1327,7 @@ class FinestraArchivio:
         self.archivio = cartella_archivio(impostazioni.carica())
         self.win = tk.Toplevel(app.root)
         self.win.title("Archivio documenti")
-        self.win.geometry("1000x620")
+        adatta_finestra(self.win, 1000, 620)
         self.win.transient(app.root)
 
         alto = ttk.Frame(self.win, padding=(10, 8))
@@ -1221,12 +1356,12 @@ class FinestraArchivio:
                        "dimensione": "Dimensione"}
         for col, titolo in self.titoli.items():
             self.albero.heading(col, text=titolo, command=lambda c=col: self.ordina(c, cambia=True))
-        self.albero.column("#0", width=500)
-        self.albero.column("periodo", width=130)
-        self.albero.column("data", width=150, anchor="center")
-        self.albero.column("dimensione", width=100, anchor="e")
-        self.albero.tag_configure("cliente", font=("Segoe UI", 10, "bold"))
-        self.albero.tag_configure("categoria", font=("Segoe UI", 9, "bold"), foreground="#1a5a96")
+        self.albero.column("#0", width=px(500))
+        self.albero.column("periodo", width=px(130))
+        self.albero.column("data", width=px(150), anchor="center")
+        self.albero.column("dimensione", width=px(100), anchor="e")
+        self.albero.tag_configure("cliente", font=_f(10, "bold"))
+        self.albero.tag_configure("categoria", font=_f(9, "bold"), foreground="#1a5a96")
         App._con_scrollbar(corpo, self.albero)
         self.albero.bind("<Double-1>", lambda _e: self.apri_nel_programma())
         self.albero.bind("<Delete>", lambda _e: self.elimina())
@@ -1389,7 +1524,7 @@ class FinestraConfronto:
         r = esito.report
         self.win = tk.Toplevel(parent)
         self.win.title("Confronto tra documenti")
-        self.win.geometry("1100x680")
+        adatta_finestra(self.win, 1100, 680)
         self.win.transient(parent)
 
         intest = ttk.Frame(self.win, padding=(10, 8))
@@ -1398,7 +1533,7 @@ class FinestraConfronto:
                   style="Titolo.TLabel").pack(side="left")
         fg, bg = COLORI[r.esito_globale]
         tk.Label(intest, text=f"{SIMBOLI[r.esito_globale]} {r.esito_globale.value}", fg=fg, bg=bg,
-                 font=("Segoe UI", 12, "bold"), padx=12, pady=4).pack(side="right")
+                 font=_f(12, "bold"), padx=12, pady=4).pack(side="right")
         ttk.Button(intest, text="💾  Esporta…", command=self.esporta).pack(side="right", padx=8)
 
         divisore = ttk.PanedWindow(self.win, orient="vertical")
@@ -1408,12 +1543,12 @@ class FinestraConfronto:
         self.albero = ttk.Treeview(f1, columns=("esito", "controllo", "dettaglio"), show="headings")
         for col, testo, w in [("esito", "", 40), ("controllo", "Controllo", 200), ("dettaglio", "Dettaglio", 760)]:
             self.albero.heading(col, text=testo)
-            self.albero.column(col, width=w, anchor="center" if col == "esito" else "w",
+            self.albero.column(col, width=px(w), anchor="center" if col == "esito" else "w",
                                stretch=col == "dettaglio")
         for e, (fg, bg) in COLORI.items():
             self.albero.tag_configure(e.value, foreground=fg, background=bg)
         self.albero.tag_configure("gruppo", foreground="#ffffff", background="#57606a",
-                                  font=("Segoe UI", 9, "bold"))
+                                  font=_f(9, "bold"))
         for gruppo, controlli in r.gruppi().items():
             self.albero.insert("", "end", values=("", gruppo.upper(), ""), tags=("gruppo",))
             for c in controlli:
@@ -1434,7 +1569,7 @@ class FinestraConfronto:
             tab = ttk.Treeview(interno, columns=[c[0] for c in self.COLONNE], show="headings", height=6)
             for chiave, titolo, w, anchor in self.COLONNE:
                 tab.heading(chiave, text=titolo)
-                tab.column(chiave, width=w, anchor=anchor)
+                tab.column(chiave, width=px(w), anchor=anchor)
             for e, (fg, bg) in COLORI.items():
                 tab.tag_configure(e.value, foreground=fg, background=bg)
             tab.tag_configure("gruppo", foreground="#ffffff", background="#57606a")
@@ -1478,6 +1613,7 @@ class FinestraConfronto:
 def main(file_iniziali: list[str] | None = None) -> None:
     import sys
 
+    _dpi_windows()
     root, dnd = _crea_root()
     app = App(root, dnd)
     file_iniziali = file_iniziali if file_iniziali is not None else sys.argv[1:]

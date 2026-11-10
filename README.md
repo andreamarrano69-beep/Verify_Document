@@ -188,6 +188,14 @@ Il colore indica cosa c'è e cosa manca: **verde** caricato, **giallo** ne servo
 **rosso** manca, grigio facoltativo; sotto, il riepilogo «mancano: …».
 «🏠 Home» o «Cambia settore» tornano alla Home (con la scelta di iniziare un nuovo cliente).
 
+## Schermi piccoli e zoom di Windows
+
+Le finestre si adattano allo schermo: con lo zoom di Windows (es. 150% su un portatile da 14") colonne,
+finestre e spazi crescono insieme ai caratteri; le file di pulsanti vanno a capo se non c'è spazio; le
+finestre secondarie non superano mai lo schermo. Sotto 1500×880 punti effettivi (es. 1366×768, oppure
+1920×1080 al 150%) si attiva la **modalità compatta**: caratteri un po' più piccoli e testi dei pulsanti
+più brevi. Per provarla o escluderla: variabile `VERIFY_DOCUMENT_COMPATTO=1` (o `0`).
+
 ## Conteggio estinzione
 
 **🧮 Conteggio estinzione**: inserisci rata, decorrenza, scadenza (oppure rate totali / residue) e, se noti,

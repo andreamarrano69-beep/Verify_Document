@@ -8,6 +8,7 @@ Programma Python **locale** (nessun dato inviato su internet) che legge e verifi
 | **Modello Redditi PF (ex Unico)** | Quadri compilati, regime fiscale, redditi dei quadri, imponibile, imposte, ritenute, acconti, cedolare secca, addizionali | Regime (forfettario, semplificato, ordinario, professionista, dipendente), reddito **mensile** lordo e netto; **catena del quadro RN** (complessivo = somma dei quadri, imponibile = complessivo − deduzioni, imposta lorda = IRPEF a scaglioni dell'anno, netta = lorda − detrazioni, saldo = netta − ritenute − acconti); quadro RE (compensi − spese) e RG (ricavi − costi); cedolare 10/21/26%; addizionali entro i limiti; forfettario: soglia 85.000 €, coefficiente di redditività, aliquota 5%/15% |
 | **Certificazione Unica (CU)** | Sostituto d'imposta, dipendente, anno, redditi (punti 1-3), giorni, data inizio rapporto, ritenute IRPEF, addizionali, **imposta lorda, detrazioni, trattamento integrativo**, imponibile e contributi INPS — anche dalle **caselle numerate** con descrizione su più righe e importo sotto | CF e P.IVA validi, giorni, **imposta lorda = IRPEF a scaglioni**, **imposta lorda − detrazioni = ritenute**, totale detrazioni, addizionali regionale/comunale entro i limiti, trattamento integrativo, aliquota INPS, reddito ≈ imponibile INPS − contributi, reddito **mensile** lordo e netto |
 | **Pensione** (cedolino INPS o di altre casse, certificato ObisM) | Pensionato, ente, categoria (VO, IO, SO, AS…), numero pensione, rata, lordo, IRPEF, addizionali, **cessione del quinto, prestiti, pignoramenti**, netto | CF valido ed età coerente con la categoria, netto = lordo − trattenute, IRPEF del mese entro il massimo possibile, prestazioni assistenziali (assegno sociale, invalidità civile) segnalate, importo mensile e annuo (13 mensilità) |
+| **Estratto contributivo** (INPS, dipendenti pubblici ex INPDAP, Gestione separata) | Periodi dal/al, tipo di contribuzione, contributi (settimane, mesi, giorni), retribuzione, datore | **Somma dei contributi** e **anzianità contributiva** (max 52 settimane l'anno: i periodi sovrapposti non contano due volte), periodi sovrapposti e scoperti, contributi superiori alla durata del periodo, totale del documento = somma delle righe, anni mancanti a pensione anticipata e di vecchiaia |
 | **Documento d'identità** (CIE, carta, patente, passaporto, tessera sanitaria) | Cognome, nome, nascita, sesso, numero, rilascio, scadenza, CF | CF valido e coerente con cognome/nome/data/sesso, documento scaduto o in scadenza |
 
 Per i **PDF** viene inoltre esaminato il file stesso alla ricerca di **segni di alterazione** (vedi sotto).
@@ -168,19 +169,50 @@ python -m verify_document esempi/confronto/*.txt --confronta
 python -m verify_document esempi/pensionato/*.txt --confronta
 ```
 
+## Home: scansione per settore e prodotto
+
+Sotto la barra dei pulsanti: scegli il **settore** (👴 Pensionato, 🏢 Privato, 🏛 Statale) e poi il **prodotto**
+(Busta paga / Cedolino NoiPA, Cedolino pensione, ObisM, CU, Unico / Redditi, Estratto contributivo):
+il programma imposta il tipo di documento e apre la finestra per scegliere i file.
+
+## Conteggio estinzione
+
+**🧮 Conteggio estinzione**: inserisci rata, decorrenza, scadenza (oppure rate totali / residue) e, se noti,
+TAN o importo finanziato e costi iniziali. Il calcolo sommario (ammortamento alla francese) restituisce
+rate pagate e residue, debito residuo lordo, **capitale residuo**, interessi non dovuti, **indennizzo**
+(1% o 0,5%, art. 125-sexies TUB, non dovuto sotto 10.000 €), costi da restituire in proporzione e
+**totale per estinguere**; segnala rate scadute ma non pagate e quando la cessione è **rinnovabile**
+(40% della durata). È una stima: fa fede il conteggio estintivo della finanziaria.
+
+## Dati personali oscurati in ciò che esce dal PC
+
+Sullo schermo i dati restano visibili. **Report PDF, esportazioni .txt/.json e report del confronto**
+sono invece creati con i dati personali oscurati: nome → iniziali, codice fiscale `XXXXXX00X00X000X`,
+data e luogo di nascita, numeri di documento/pensione, matricola e IBAN. Gli importi restano.
+Si disattiva in **⚙ Impostazioni** (o `--dati-in-chiaro` da riga di comando).
+Nella scheda «Testo letto» c'è **📋 Copia testo anonimizzato** per chiedere assistenza.
+
 ## Archivio documenti
 
 Quando apri un documento da qualsiasi cartella (es. la cartella delle **scansioni**), il programma ne salva
-una **copia nell'archivio**, divisa per cliente e con un nome comprensibile:
+una **copia nell'archivio**: una cartella per cliente (**COGNOME NOME**) e dentro una sottocartella per prodotto:
 
 ```
 documenti/
-  RSSMRA80A01H501U - ROSSI MARIO/
-    Busta paga - Ottobre 2026 - [Untitled]_2023012715060859.pdf
-    CU - Anno 2025 - scansione_12.pdf
-  BNCGPP55A10H501F - BIANCHI GIUSEPPE/
-    Cedolino pensione - Marzo 2025 - ....pdf
+  ROSSI MARIO/
+    Buste paga/
+      Busta paga - Ottobre 2026 - [Untitled]_2023012715060859.pdf
+    CU/
+      CU - Anno 2025 - scansione_12.pdf
+    Estratti contributivi/
+    Documenti identità/
+  BIANCHI GIUSEPPE/
+    Cedolini pensione/
+    ObisM/
 ```
+
+La cartella è legata al codice fiscale (file nascosto `.codice_fiscale`): se il nome viene letto in modo
+diverso si usa la stessa cartella; un omonimo con codice fiscale diverso riceve il CF tra parentesi.
 
 - l'originale non viene mai toccato; lo stesso file non viene copiato due volte
 - **🗂 Archivio**: elenco per cliente, ordinabile per **periodo** del documento, data o nome (clic sull'intestazione),
@@ -294,6 +326,8 @@ verify_document/
   busta_paga.py       analisi cedolino
   modello_redditi.py  analisi Modello Redditi PF
   pensione.py         analisi cedolino pensione e certificato ObisM
+  estratto_contributivo.py  estratto conto contributivo: periodi, somma contributi, anzianità
+  estinzione.py       conteggio sommario di estinzione anticipata
   impegni.py          cessione del quinto, deleghe, pignoramenti, quinto cedibile
   voci.py             ricalcolo delle voci (tariffa × quantità, base × aliquota) e contributi IVS
   anonimizza.py       testo senza dati personali da inviare per l'assistenza

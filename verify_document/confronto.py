@@ -45,6 +45,8 @@ class Documento:
             return "cu"
         if t.startswith(("Cedolino pensione", "Certificato di pensione")):
             return "pensione"
+        if t == "Estratto contributivo":
+            return "estratto"
         return "anagrafica"
 
     @property
@@ -688,6 +690,10 @@ def fascicolo(documenti: list[tuple[str, Report]], anno_corrente: int | None = N
                             else "Modello Redditi")
         if pensioni:
             presenti.append(f"Documenti di pensione: {len(pensioni)}")
+        estratti = [d for d in ds if d.tipo == "estratto"]
+        if estratti:
+            e = max(estratti, key=lambda d: d.report.dati.get("ultimo_contributo") or date.min).report.dati
+            presenti.append(f"Estratto contributivo: anzianità {e.get('anzianita_contributiva') or 'non calcolata'}")
 
         for anno in anni_buste:
             if anno < anno_corrente and anno not in anni_cu:

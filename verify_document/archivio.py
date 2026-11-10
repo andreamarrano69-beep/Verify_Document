@@ -30,6 +30,7 @@ TIPI_BREVI = {
     "Certificazione Unica (CU)": "CU",
     "Cedolino pensione": "Cedolino pensione",
     "Certificato di pensione (ObisM)": "ObisM",
+    "Estratto contributivo": "Estratto contributivo",
 }
 _MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto",
          "settembre", "ottobre", "novembre", "dicembre"]
@@ -85,7 +86,7 @@ def data_documento(report: Report | None) -> date | None:
     for k in ("periodo_imposta", "anno"):
         if isinstance(d.get(k), int):
             return date(d[k], 12, 31)
-    for k in ("data_rilascio", "data_scadenza"):
+    for k in ("data_estratto", "ultimo_contributo", "data_rilascio", "data_scadenza"):
         if isinstance(d.get(k), date):
             return d[k]
     return None
@@ -103,6 +104,9 @@ def descrizione_periodo(report: Report | None) -> str:
         return f"Anno {d['anno']}"
     if isinstance(d.get("data_scadenza"), date):
         return f"Scad. {d['data_scadenza']:%d/%m/%Y}"
+    for k in ("data_estratto", "ultimo_contributo"):
+        if isinstance(d.get(k), date):
+            return f"{_MESI[d[k].month - 1].capitalize()} {d[k].year}"
     return ""
 
 

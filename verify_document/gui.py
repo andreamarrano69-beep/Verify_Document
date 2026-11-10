@@ -33,8 +33,21 @@ TIPI = {
     "Modello Redditi PF": "redditi",
     "Certificazione Unica (CU)": "cu",
     "Pensione (cedolino / ObisM)": "pensione",
+    "Estratto contributivo": "estratto",
     "Documento d'identità": "anagrafica",
 }
+
+# Home: prodotti da scansionare per ogni settore (etichetta del pulsante, tipo di documento in TIPI)
+SETTORI = {
+    "Pensionato": [("Cedolino pensione", "Pensione (cedolino / ObisM)"), ("ObisM", "Pensione (cedolino / ObisM)"),
+                   ("CU", "Certificazione Unica (CU)"), ("Unico / Redditi", "Modello Redditi PF"),
+                   ("Estratto contributivo", "Estratto contributivo")],
+    "Privato": [("Busta paga", "Busta paga"), ("CU", "Certificazione Unica (CU)"),
+                ("Unico / Redditi", "Modello Redditi PF"), ("Estratto contributivo", "Estratto contributivo")],
+    "Statale": [("Cedolino (NoiPA)", "Busta paga"), ("CU", "Certificazione Unica (CU)"),
+                ("Unico / Redditi", "Modello Redditi PF"), ("Estratto contributivo", "Estratto contributivo")],
+}
+ICONE_SETTORI = {"Pensionato": "👴", "Privato": "🏢", "Statale": "🏛"}
 
 COLORI = {
     Esito.OK: ("#1e7b34", "#e6f4ea"),
@@ -158,6 +171,7 @@ class App:
         menu_esporta["menu"] = menu
         menu_esporta.pack(side="left", padx=6)
         ttk.Button(barra, text="🗂  Archivio", command=self.apri_archivio).pack(side="left")
+        ttk.Button(barra, text="🧮  Conteggio estinzione", command=self.apri_estinzione).pack(side="left", padx=6)
         ttk.Button(barra, text="⏻  Esci", style="Esci.TButton", command=self.esci).pack(side="right")
         ttk.Separator(barra, orient="vertical").pack(side="right", fill="y", padx=8)
         ttk.Button(barra, text="⚙  Impostazioni", command=self.apri_impostazioni).pack(side="right")
@@ -180,6 +194,23 @@ class App:
                             {"archivia_automaticamente": "1" if self.var_archivia.get() else "0"})).pack(side="left")
         ttk.Button(opzioni, text="↻  Rianalizza", command=self.rianalizza).pack(side="left", padx=(10, 0))
         ttk.Button(opzioni, text="🗑  Svuota", command=self.svuota).pack(side="left", padx=6)
+
+        # riga 3 (home): scansione guidata per settore e prodotto
+        home = ttk.LabelFrame(self.root, text=" Scansione per settore e prodotto ", padding=(10, 4, 10, 6))
+        home.pack(fill="x", padx=10, pady=(0, 6))
+        ttk.Label(home, text="Settore:").pack(side="left")
+        self.var_settore = tk.StringVar(value="Privato")
+        self.pulsanti_settore: dict[str, tk.Button] = {}
+        for settore in SETTORI:
+            b = tk.Button(home, text=f"{ICONE_SETTORI[settore]} {settore}", relief="groove", bd=1, padx=10, pady=2,
+                          font=("Segoe UI", 10), cursor="hand2", command=lambda s=settore: self.scegli_settore(s))
+            b.pack(side="left", padx=2)
+            self.pulsanti_settore[settore] = b
+        ttk.Separator(home, orient="vertical").pack(side="left", fill="y", padx=10)
+        ttk.Label(home, text="Prodotto:").pack(side="left")
+        self.riquadro_prodotti = ttk.Frame(home)
+        self.riquadro_prodotti.pack(side="left", padx=4)
+        self.scegli_settore("Privato")
 
         corpo = ttk.PanedWindow(self.root, orient="horizontal")
         corpo.pack(fill="both", expand=True, padx=10, pady=(0, 6))
@@ -347,6 +378,28 @@ class App:
         if percorsi:
             impostazioni.salva({"ultima_cartella": str(Path(percorsi[0]).parent)})
             self.aggiungi(percorsi)
+
+    def scegli_settore(self, settore: str) -> None:
+        self.var_settore.set(settore)
+        for nome, b in self.pulsanti_settore.items():
+            attivo = nome == settore
+            b.configure(bg="#1a5a96" if attivo else "#eef2f6", fg="#ffffff" if attivo else "#1f2328",
+                        activebackground="#174e83" if attivo else "#dde5ee",
+                        font=("Segoe UI", 10, "bold" if attivo else "normal"))
+        for w in self.riquadro_prodotti.winfo_children():
+            w.destroy()
+        for etichetta, tipo in SETTORI[settore]:
+            ttk.Button(self.riquadro_prodotti, text=f"📄 {etichetta}",
+                       command=lambda t=tipo: self.scansiona_prodotto(t)).pack(side="left", padx=2)
+
+    def scansiona_prodotto(self, tipo: str) -> None:
+        """Imposta il tipo di documento del prodotto scelto e apre i file."""
+        self.var_tipo.set(tipo)
+        self.var_stato.set(f"{self.var_settore.get()} · {tipo}: scegli i documenti")
+        self.apri_file()
+
+    def apri_estinzione(self) -> None:
+        FinestraEstinzione(self.root)
 
     def aggiungi(self, percorsi) -> None:
         for p in percorsi:
@@ -924,6 +977,134 @@ class FinestraImpostazioni:
 
 
 from datetime import date  # noqa: E402  (usato dalla finestra archivio)
+
+
+def leggi_mese(testo: str) -> date | None:
+    """'03/2024', '3-2024', '15/03/2024' -> date (primo giorno indicato o 1)."""
+    import re
+
+    testo = testo.strip()
+    if not testo:
+        return None
+    m = re.fullmatch(r"(?:(\d{1,2})[/.-])?(\d{1,2})[/.-](\d{4})", testo)
+    if not m:
+        raise ValueError(f"Data non valida: «{testo}» (usa mm/aaaa oppure gg/mm/aaaa)")
+    return date(int(m.group(3)), int(m.group(2)), int(m.group(1) or 1))
+
+
+class FinestraEstinzione:
+    """Conteggio sommario di estinzione anticipata: rata, decorrenza, scadenza, rate residue."""
+
+    CAMPI = [("rata", "Rata mensile (€) *", "es. 250,00"),
+             ("decorrenza", "Decorrenza – prima rata", "mm/aaaa"),
+             ("scadenza", "Scadenza – ultima rata", "mm/aaaa"),
+             ("rate_totali", "Rate totali", "se non indicate: da decorrenza e scadenza"),
+             ("rate_residue", "Rate residue", "se non indicate: calcolate alla data del conteggio"),
+             ("tan", "TAN %", "dal contratto (es. 6,5)"),
+             ("capitale", "Importo finanziato (€)", "se il TAN non è noto"),
+             ("costi", "Costi / commissioni iniziali (€)", "per la stima dei costi da restituire"),
+             ("data", "Data del conteggio", "gg/mm/aaaa (vuota = oggi)")]
+
+    def __init__(self, parent: tk.Tk):
+        self.win = tk.Toplevel(parent)
+        self.win.title("Conteggio sommario di estinzione")
+        self.win.geometry("1060x640")
+        self.win.transient(parent)
+        sx = ttk.Frame(self.win, padding=14)
+        sx.pack(side="left", fill="y")
+        ttk.Label(sx, text="Dati del finanziamento", style="Titolo.TLabel").grid(row=0, column=0, columnspan=2,
+                                                                                 sticky="w", pady=(0, 8))
+        self.var: dict[str, tk.StringVar] = {}
+        for i, (chiave, etichetta, aiuto) in enumerate(self.CAMPI):
+            ttk.Label(sx, text=etichetta).grid(row=1 + i * 2, column=0, sticky="w", pady=(4, 0))
+            self.var[chiave] = tk.StringVar()
+            e = ttk.Entry(sx, textvariable=self.var[chiave], width=18)
+            e.grid(row=1 + i * 2, column=1, sticky="w", padx=(8, 0), pady=(4, 0))
+            e.bind("<Return>", lambda _e: self.calcola())
+            ttk.Label(sx, text=aiuto, foreground="#666", font=("Segoe UI", 8)).grid(row=2 + i * 2, column=0,
+                                                                                  columnspan=2, sticky="w")
+        self.var_quinto = tk.BooleanVar(value=True)
+        r = 1 + len(self.CAMPI) * 2
+        ttk.Checkbutton(sx, text="Cessione del quinto / delega", variable=self.var_quinto).grid(
+            row=r, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        pulsanti = ttk.Frame(sx)
+        pulsanti.grid(row=r + 1, column=0, columnspan=2, sticky="w", pady=(12, 0))
+        ttk.Button(pulsanti, text="🧮  Calcola", style="Accent.TButton", command=self.calcola).pack(side="left")
+        ttk.Button(pulsanti, text="📋  Copia", command=self.copia).pack(side="left", padx=6)
+        ttk.Button(pulsanti, text="💾  Salva…", command=self.salva).pack(side="left")
+        ttk.Button(pulsanti, text="Chiudi", command=self.win.destroy).pack(side="left", padx=6)
+
+        dx = ttk.Frame(self.win, padding=(0, 14, 14, 14))
+        dx.pack(side="left", fill="both", expand=True)
+        self.risultato = tk.Text(dx, wrap="word", font=("Consolas", 10), padx=10, pady=8, background="#f8fafc",
+                                 width=72)
+        self.risultato.pack(fill="both", expand=True)
+        self.risultato.tag_configure("totale", font=("Consolas", 11, "bold"), foreground="#1a5a96")
+        self.risultato.tag_configure("avviso", foreground="#8a5a00")
+        self._mostra("Inserisci la rata e almeno due tra decorrenza, scadenza, rate totali e rate residue,\n"
+                     "poi premi «Calcola».\n\nCon il TAN (o l'importo finanziato) il programma calcola il capitale "
+                     "residuo,\ngli interessi non dovuti e l'indennizzo di estinzione anticipata.")
+        self.testo = ""
+
+    def _mostra(self, testo: str) -> None:
+        self.risultato.configure(state="normal")
+        self.risultato.delete("1.0", "end")
+        for riga in testo.split("\n"):
+            tag = "totale" if riga.startswith("TOTALE") else "avviso" if riga.lstrip().startswith("⚠") else ""
+            self.risultato.insert("end", riga + "\n", tag)
+        self.risultato.configure(state="disabled")
+
+    def _valori(self) -> dict:
+        import re
+        from decimal import Decimal, InvalidOperation
+
+        def importo(chiave):
+            s = self.var[chiave].get().strip().replace("€", "").replace(" ", "").replace("%", "")
+            if not s:
+                return None
+            if "," in s or re.fullmatch(r"\d{1,3}(?:\.\d{3})+", s):  # 1.500 / 1.500,00 = millecinquecento
+                s = s.replace(".", "").replace(",", ".")
+            try:
+                return Decimal(s)
+            except InvalidOperation:
+                raise ValueError(f"Valore non valido: «{self.var[chiave].get()}»") from None
+
+        def intero(chiave):
+            v = importo(chiave)
+            return int(v) if v is not None else None
+
+        rata = importo("rata")
+        if rata is None:
+            raise ValueError("Inserire la rata mensile")
+        return dict(rata=rata, decorrenza=leggi_mese(self.var["decorrenza"].get()),
+                    scadenza=leggi_mese(self.var["scadenza"].get()), rate_totali=intero("rate_totali"),
+                    rate_residue=intero("rate_residue"), tan=importo("tan"), capitale=importo("capitale"),
+                    costi=importo("costi"), data_conteggio=leggi_mese(self.var["data"].get()),
+                    quinto=self.var_quinto.get())
+
+    def calcola(self) -> None:
+        from .estinzione import calcola
+
+        try:
+            self.testo = calcola(**self._valori()).testo()
+        except ValueError as e:
+            messagebox.showwarning("Conteggio estinzione", str(e), parent=self.win)
+            return
+        self._mostra(self.testo)
+
+    def copia(self) -> None:
+        if self.testo:
+            self.win.clipboard_clear()
+            self.win.clipboard_append(self.testo)
+
+    def salva(self) -> None:
+        if not self.testo:
+            return
+        dest = filedialog.asksaveasfilename(parent=self.win, defaultextension=".txt",
+                                            initialfile=f"conteggio_estinzione_{date.today():%Y%m%d}.txt",
+                                            filetypes=[("Testo", "*.txt")])
+        if dest:
+            Path(dest).write_text(self.testo, encoding="utf-8")
 
 
 class FinestraArchivio:

@@ -1,0 +1,21 @@
+INPS - ESTRATTO CONTO CONTRIBUTIVO
+(dati di esempio inventati)
+
+Assicurato: VERDI LUCA
+Codice fiscale: VRDLCU75C15F205E
+Aggiornato al: 31/10/2026
+
+Dal          Al           Tipologia contributo           Contributi  Unità di misura  Retribuzione   Datore di lavoro
+01/09/1995   31/12/1995   Lavoro dipendente              17          Settimane        3.200,00       BETA SNC
+01/01/1996   31/12/1996   Lavoro dipendente              52          Settimane        11.500,00      BETA SNC
+01/01/1997   30/06/1997   Lavoro dipendente              26          Settimane        6.100,00       BETA SNC
+01/07/1997   31/12/1997   Disoccupazione                 26          Settimane                       NASPI
+01/01/1998   31/12/1998   Lavoro dipendente              52          Settimane        15.400,00      GAMMA SRL
+01/01/1999   31/12/1999   Lavoro dipendente              52          Settimane        16.200,00      GAMMA SRL
+01/01/2000   31/12/2004   Lavoro dipendente              260         Settimane        92.000,00      GAMMA SRL
+01/03/2005   31/12/2005   Gestione separata              10          Mesi             9.800,00       COLLABORAZIONE
+01/01/2006   31/12/2015   Lavoro dipendente              520         Settimane        280.000,00     DELTA SPA
+01/01/2016   31/12/2025   Lavoro dipendente              520         Settimane        330.000,00     DELTA SPA
+01/01/2026   30/09/2026   Lavoro dipendente              39          Settimane        26.000,00      DELTA SPA
+
+Totale settimane: 1.607

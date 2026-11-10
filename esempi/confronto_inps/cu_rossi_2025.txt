@@ -1,0 +1,23 @@
+AGENZIA DELLE ENTRATE
+CERTIFICAZIONE UNICA 2026 - CERTIFICAZIONE LAVORO DIPENDENTE, ASSIMILATI ED ASSISTENZA FISCALE
+Periodo d'imposta 2025
+
+DATI RELATIVI AL SOSTITUTO D'IMPOSTA
+Codice fiscale 12345678903   Denominazione ESEMPIO SRL   Comune ROMA
+
+DATI RELATIVI AL DIPENDENTE, PENSIONATO O ALTRO PERCETTORE DELLE SOMME
+Codice fiscale RSSMRA80A01H501U   Cognome ROSSI   Nome MARIO
+
+DATI FISCALI
+1  Redditi di lavoro dipendente e assimilati (tempo indeterminato)     25.381,33
+2  Redditi di lavoro dipendente e assimilati (tempo determinato)
+6  Numero giorni di lavoro dipendente                                  365
+8  Data inizio rapporto 01/03/2019
+21 Ritenute IRPEF                                                       4.161,95
+22 Addizionale regionale all'IRPEF                                        380,00
+26 Saldo addizionale comunale                                              95,00
+29 Acconto addizionale comunale                                            55,00
+
+DATI PREVIDENZIALI - INPS
+Imponibile previdenziale                                             27.950,00
+Contributi a carico del lavoratore trattenuti                         2.568,67

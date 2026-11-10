@@ -35,6 +35,7 @@ class Report:
     tipo_documento: str
     dati: dict = field(default_factory=dict)
     controlli: list[Controllo] = field(default_factory=list)
+    extra: dict = field(default_factory=dict)  # dati di lavoro per i controlli incrociati (non mostrati)
 
     def aggiungi(self, nome: str, esito: Esito, dettaglio: str, gruppo: str = GRUPPO_DATI) -> None:
         self.controlli.append(Controllo(nome, esito, dettaglio, gruppo))

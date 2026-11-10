@@ -117,6 +117,22 @@ def riconosci(testo: str) -> int:
     return sum(peso for pattern, peso in TERMINI_BUSTA if re.search(pattern, testo, re.IGNORECASE))
 
 
+_FORMA_SOCIETARIA = r"(?:S\.?R\.?L\.?S?|S\.?P\.?A\.?|S\.?N\.?C\.?|S\.?A\.?S\.?|SOC\.?\s*COOP\w*|S\.?C\.?A\.?R\.?L\.?)"
+
+
+def _trova_azienda(testo: str) -> str | None:
+    """Ragione sociale del datore di lavoro (per il confronto con CU ed estratto contributivo)."""
+    m = re.search(r"(?:azienda|ditta|datore\s+di\s+lavoro|ragione\s+sociale|amministrazione)\s*[:\-]\s*"
+                  r"([A-Z0-9][A-Za-z0-9&'.\- ]{2,60}?)(?=\s{2,}|\n|,|$|\s+(?:via|viale|piazza|corso|p\.?\s?iva|"
+                  r"partita|c\.?f))", testo, re.IGNORECASE)
+    if m:
+        return m.group(1).strip(" .-")
+    intestazione = "\n".join(testo.splitlines()[:8])
+    m = re.search(rf"\b([A-Z][A-Z0-9&'. ]{{1,50}}?\s{_FORMA_SOCIETARIA}(?:\s+DI\s+[A-Z][A-Z' ]{{2,40}}?)?)(?=\s{{2,}}|\n|$)",
+                  intestazione, re.IGNORECASE)
+    return re.sub(r"\s+", " ", m.group(1)).strip() if m else None
+
+
 def _trova_periodo(testo: str) -> str | None:
     m = re.search(r"\b(" + "|".join(MESI) + r")\s+(\d{4})\b", testo, re.IGNORECASE)
     if m:
@@ -164,6 +180,7 @@ def analizza(testo: str) -> Report:
         r"(?<!ratei\s)(?<!rateo\s)\b(tredicesima|quattordicesima|1[34]\s*[ªa°^]\s*mensilit|mensilit[aà]\s+aggiuntiva)",
         intestazione, re.IGNORECASE)) or None
 
+    d["azienda"] = _trova_azienda(testo)
     piva = _trova_piva(testo)
     d["partita_iva_azienda"] = piva
     if not piva:

@@ -1,0 +1,27 @@
+CEDOLINO PAGA - LIBRO UNICO DEL LAVORO                Periodo: OTTOBRE 2026
+AZIENDA: ESEMPIO SRL   Via Roma 1, 00100 Roma
+Partita IVA: 12345678903
+DIPENDENTE: ROSSI MARIO        Codice fiscale: RSSMRA80A01H501U
+Qualifica: Impiegato   Livello: 4   CCNL: Commercio
+Contratto: Tempo indeterminato   Orario: Tempo pieno
+Data assunzione: 01/03/2019
+
+COD  DESCRIZIONE                         COMPETENZE    TRATTENUTE
+0010 Retribuzione ordinaria                2.000,00
+0020 Superminimo                             150,00
+1000 Contributo IVS                                       197,59
+2000 Ritenute IRPEF                                       320,15
+
+Imponibile previdenziale      2.150,00
+Contributi dipendente           197,59
+Imponibile fiscale            1.952,41
+IRPEF lorda                     449,05
+IRPEF netta                     320,15
+Progressivo imponibile fiscale    19.524,10
+Progressivo IRPEF                  3.201,50
+
+TOTALE COMPETENZE             2.150,00
+TOTALE TRATTENUTE               517,74
+Arrotondamento precedente         0,88
+Arrotondamento attuale            0,62
+NETTO IN BUSTA                1.632,00

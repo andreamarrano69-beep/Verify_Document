@@ -156,6 +156,9 @@ def analizza(testo: str) -> Report:
     sostituto = _trova_sostituto(testo)
     d["sostituto_imposta"] = sostituto
     d["partita_iva_azienda"] = sostituto if sostituto and sostituto.isdigit() else None
+    m = re.search(r"(?:denominazione|ragione\s+sociale)\s*[:\-]?\s*([A-Z][A-Za-z0-9&'.\- ]{2,60}?)"
+                  r"(?=\s{2,}|\n|$|\s+(?:comune|codice|prov))", testo, re.IGNORECASE)
+    d["denominazione_sostituto"] = m.group(1).strip(" .-") if m else None
     if not sostituto:
         r.aggiungi("Sostituto d'imposta", Esito.ATTENZIONE, "Codice fiscale del datore di lavoro non trovato")
     else:

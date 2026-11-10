@@ -1,0 +1,12 @@
+INPS - ESTRATTO CONTO CONTRIBUTIVO
+(dati di esempio inventati)
+
+Assicurato: ROSSI MARIO
+Codice fiscale: RSSMRA80A01H501U
+Aggiornato al: 30/09/2026
+
+Dal          Al           Tipologia contributo     Contributi  Unità di misura  Retribuzione   Datore di lavoro
+01/09/2005   28/02/2019   Lavoro dipendente        703         Settimane        301.000,00     ALFA COSTRUZIONI SRL
+01/03/2019   31/12/2024   Lavoro dipendente        304         Settimane        148.000,00     ESEMPIO SRL
+01/01/2025   31/12/2025   Lavoro dipendente        52          Settimane        27.950,00      ESEMPIO SRL
+01/01/2026   30/09/2026   Lavoro dipendente        39          Settimane        19.350,00      ESEMPIO SRL

@@ -279,6 +279,8 @@ def analizza(testo: str, oggi: date | None = None) -> Report:
     somma = sum((p.settimane for p in validi), Decimal(0))
     per_anno = settimane_per_anno(validi)
     utili = sum((min(s, Decimal(SETTIMANE_ANNO)) for s in per_anno.values()), Decimal(0))
+    r.extra["periodi"] = [{"dal": p.dal, "al": p.al, "tipo": p.tipo, "settimane": p.settimane,
+                           "retribuzione": p.retribuzione, "datore": p.datore} for p in validi]
     d["primo_contributo"] = min(p.dal for p in validi) if validi else None
     d["ultimo_contributo"] = max(p.al for p in validi) if validi else None
     d["somma_contributi_settimane"] = int(somma.quantize(Decimal("1"), ROUND_HALF_UP))

@@ -163,7 +163,7 @@ def _indizi(r: Report) -> list[tuple[str, int, str]]:
         if tipo == "Pensione":
             return [("Pensionato", 2, "CU di pensione")]
         if tipo.startswith("Lavoro dipendente"):
-            if _PUBBLICO.search(str(d.get("sostituto_imposta") or "")):
+            if _PUBBLICO.search(f"{d.get('denominazione_sostituto') or ''} {d.get('sostituto_imposta') or ''}"):
                 return [("Statale", 2, "CU di un ente pubblico")]
             return [("Privato", 2, "CU da lavoro dipendente")]
         return []

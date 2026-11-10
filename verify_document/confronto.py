@@ -129,6 +129,21 @@ def confronta(documenti: list[tuple[str, Report]]) -> EsitoConfronto:
             _buste_vs_redditi(r, buste, redditi, gruppo)
         if len(redditi) > 1:
             _confronta_redditi(r, redditi, gruppo)
+        # controlli incrociati con l'estratto contributivo INPS e con la ricevuta telematica
+        from . import incroci
+
+        estratti = [d for d in ds if d.tipo == "estratto"]
+        ricevute = [d for d in ds if d.tipo == "ricevuta"]
+        if estratti and buste:
+            incroci.buste_vs_estratto(r, buste, estratti, gruppo)
+        if estratti and certificazioni:
+            incroci.cu_vs_estratto(r, certificazioni, estratti, gruppo)
+        if estratti and redditi:
+            incroci.redditi_vs_estratto(r, redditi, estratti, gruppo)
+        if estratti and pensioni:
+            incroci.pensioni_vs_estratto(r, pensioni, estratti, gruppo)
+        if ricevute:
+            incroci.redditi_vs_ricevute(r, redditi, ricevute, gruppo)
     return esito
 
 
@@ -703,6 +718,9 @@ def fascicolo(documenti: list[tuple[str, Report]], anno_corrente: int | None = N
             presenti.append(f"Ricevuta telematica redditi {dr.get('periodo_imposta') or ''}: protocollo "
                             f"{dr.get('protocollo_telematico') or 'non letto'}{stato}")
         estratti = [d for d in ds if d.tipo == "estratto"]
+        if not estratti and (buste or cu or pensioni or redditi):
+            suggerimenti.append("Estratto contributivo INPS: per verificare che buste paga, CU, Unico e pensione "
+                                "corrispondano ai contributi registrati (il controllo più difficile da ingannare)")
         if estratti:
             e = max(estratti, key=lambda d: d.report.dati.get("ultimo_contributo") or date.min).report.dati
             presenti.append(f"Estratto contributivo: anzianità {e.get('anzianita_contributiva') or 'non calcolata'}")

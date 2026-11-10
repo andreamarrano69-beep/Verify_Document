@@ -43,7 +43,40 @@ def anonimizza(testo: str, report: Report | None = None) -> str:
         t = re.sub(rf"\b{re.escape(nome)}\b", "X" * len(nome), t, flags=re.IGNORECASE)
     # matricole, numeri di documento e di pensione (sequenze lunghe di cifre non importi né P.IVA)
     t = re.sub(r"(?<![\d.,])\d{12,}(?![\d.,])", lambda m: "0" * len(m.group(0)), t)
-    return t
+    return oscura_indirizzi_e_frammenti(t)
+
+
+def _oscura(s: str) -> str:
+    """Lettere -> X, cifre -> 0: stessa lunghezza, così le colonne del testo restano allineate."""
+    return re.sub(r"\d", "0", re.sub(r"[A-Za-zÀ-ÿ]", "X", s))
+
+
+def oscura_indirizzi_e_frammenti(t: str) -> str:
+    """Dati personali che l'OCR non permette di riconoscere con certezza: si oscurano comunque.
+
+    - indirizzi (VIA/PIAZZA/CORSO ... numero civico), CAP + comune, codice catastale + comune
+    - pezzi di codice fiscale letti a metà (6 lettere quasi tutte consonanti, es. «RSSMRA»)
+    - date vicino a «nato/nascita/nasc»
+    - nome e cognome sotto l'intestazione «COGNOME E NOME» / «NOMINATIVO» / «DIPENDENTE»
+    """
+    t = re.sub(r"(?im)\b(?:VIA|V\.LE|VIALE|PIAZZA|P\.ZZA|PIAZZALE|CORSO|C\.SO|LARGO|VICOLO|CONTRADA|C\.DA|"
+               r"LOCALIT[AÀ]'?|LOC\.|STRADA|TRAVERSA|BORGO)\b[ \t]+[^\n]{0,45}?(?:N\.?[ \t]*)?\d+(?:[ \t]*/[ \t]*\w)?\b",
+               lambda m: _oscura(m.group(0)), t)
+    t = re.sub(r"(?m)(?<![\d,.])\d{5}[ \t]+[A-ZÀ-Ü][A-ZÀ-Ü' ]{1,30}?(?=[ \t]{2,}|[ \t]*$|[ \t]+\(?[A-Z]{2}\)?\b)",
+               lambda m: _oscura(m.group(0)), t)
+    t = re.sub(r"\b[A-Z]\d{3}[ \t]+[A-ZÀ-Ü][A-ZÀ-Ü']{2,}(?:[ \t][A-ZÀ-Ü']{2,})?", lambda m: _oscura(m.group(0)), t)
+    t = re.sub(r"\b[A-Z]{6}\b", lambda m: "XXXXXX" if sum(c not in "AEIOU" for c in m.group(0)) >= 5 else m.group(0), t)
+    t = re.sub(r"(?i)(\bnat[oa]\b|nascit\w*|\bnasc\w*\.?)([^\n\d]{0,25})(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})",
+               lambda m: m.group(1) + m.group(2) + _oscura(m.group(3)), t)
+    righe = t.split("\n")
+    for i, riga in enumerate(righe[:-1]):
+        for m in re.finditer(r"(?i)cognome\s+e\s+nome|nominativo|\bdipendente\b|\blavoratore\b", riga):
+            # il nome è sulla stessa riga dopo l'intestazione o nella riga sotto, nella stessa colonna
+            inizio, fine = max(0, m.start() - 8), m.end() + 40
+            sotto = righe[i + 1]
+            parte = re.sub(r"\b[A-ZÀ-Ü][A-ZÀ-Ü']{1,}\b", lambda x: "X" * len(x.group(0)), sotto[inizio:fine])
+            righe[i + 1] = sotto[:inizio] + parte + sotto[fine:]
+    return "\n".join(righe)
 
 
 # --- Report ed esportazioni con i dati personali oscurati ------------------------------------------------

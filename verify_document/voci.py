@@ -25,6 +25,11 @@ RIGA_PERCENTUALE = re.compile(
 RIGA_QUANTITA = re.compile(
     rf"(?P<descr>[A-Za-z][^\n]*?)\s+(?P<tariffa>\d{{1,4}},\d{{3,5}})\s+(?P<qta>\d{{1,4}},\d{{2,5}})\s*"
     rf"(?P<um>ORE|GG|H)\b\s*(?P<par>\(?)\s*(?P<imp>{_IMPORTO})\s*\)?", re.IGNORECASE)
+# Riga con codice voce, quantità e tariffa senza unità di misura (es. Zucchetti letto con l'OCR):
+#     1  RETRIBUZIONE ORDINARIA     103,20     9,24169     953,74
+RIGA_CODICE = re.compile(
+    rf"^\s*(?:[A-Z]\s+)?\d{{1,4}}\s+(?P<descr>[A-Z][^\n]*?)\s+(?P<qta>\d{{1,4}},\d{{2}})\s+"
+    rf"(?P<tariffa>\d{{1,4}},\d{{4,5}})\s+(?P<imp>{_IMPORTO})(?![\d,])")
 
 IVS = re.compile(r"contribut\w*\s*(?:\w+\s+)?i\.?v\.?s\b", re.IGNORECASE)
 ALTRI_OBBLIGATORI = re.compile(r"contribut\w*\s+(?:cigs|fis|aggiuntiv\w*|naspi|disoccupaz\w*)", re.IGNORECASE)
@@ -85,6 +90,14 @@ def analizza_voci(testo: str) -> EsitoVoci:
                 esito.righe_ivs += 1
             elif not a_carico_azienda and ALTRI_OBBLIGATORI.search(m["descr"]):
                 esito.altri_contributi += imp
+        if not RIGA_QUANTITA.search(riga):
+            m = RIGA_CODICE.match(riga)
+            if m:
+                tariffa, qta, imp = parse_importo(m["tariffa"]), parse_importo(m["qta"]), parse_importo(m["imp"])
+                if None not in (tariffa, qta, imp):
+                    atteso = _arrotonda(tariffa * qta)
+                    esito.calcoli.append(Calcolo(_descrizione(m["descr"]), f"{m['tariffa']} × {m['qta']}",
+                                                 atteso, imp, abs(atteso - imp) <= Decimal("0.011")))
         for m in RIGA_QUANTITA.finditer(riga):
             tariffa, qta, imp = parse_importo(m["tariffa"]), parse_importo(m["qta"]), parse_importo(m["imp"])
             if None in (tariffa, qta, imp):

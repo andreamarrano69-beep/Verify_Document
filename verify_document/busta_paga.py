@@ -92,14 +92,29 @@ TOLLERANZA_CENT = Decimal("0.01")
 TOLLERANZA_ARR = Decimal("1.00")
 
 
+# Parole tipiche della busta paga, con un peso: anche se l'OCR perde le intestazioni principali
+# (es. scansioni poco nitide) restano voci come matricola INPS, contingenza, ratei, TFR, IVS.
+TERMINI_BUSTA = [
+    (r"busta\s+paga|cedolino\s+(?:paga|stipendio)|libro\s+unico|prospetto\s+paga", 3),
+    (r"cedolino(?!\s+(?:della\s+|di\s+)?pension)", 1),
+    (r"netto\s+(?:in\s+busta|del\s+mese|a\s+pagare|da\s+corrispondere|pagato)", 3),
+    (r"totale\s+(?:competenze|trattenute)", 2),
+    (r"imponibile\s+(?:previdenziale|fiscale|irpef|inps)", 2),
+    (r"matricola\s+inps|posizione\s+inps|pat\s+inail", 2),
+    (r"\binail\b", 1),
+    (r"retribuzione", 1),
+    (r"contingenza|paga\s+base|minimo\s+cont|superminimo|scatti", 2),
+    (r"\bratei\b|\bferie\b|permessi|\brol\b|festivit", 1),
+    (r"\btfr\b|t\.f\.r\.", 1),
+    (r"\bivs\b|i\.v\.s\.", 1),
+    (r"\blivello\b|qualifica|impiegat|\boperai", 1),
+    (r"detrazion", 1),
+    (r"data\s+(?:di\s+)?assunzione|\bassunt[oa]\b", 1),
+]
+
+
 def riconosci(testo: str) -> int:
-    t = testo.lower()
-    punti = 0
-    for k in ["busta paga", "cedolino", "netto in busta", "totale competenze",
-              "totale trattenute", "imponibile previdenziale", "libro unico", "retribuzione"]:
-        if k in t:
-            punti += 1
-    return punti
+    return sum(peso for pattern, peso in TERMINI_BUSTA if re.search(pattern, testo, re.IGNORECASE))
 
 
 def _trova_periodo(testo: str) -> str | None:
@@ -139,7 +154,9 @@ def analizza(testo: str) -> Report:
     d = r.dati
 
     # --- Anagrafica ---------------------------------------------------------
-    periodo = _trova_periodo(testo)
+    from . import deduzioni
+
+    periodo = _trova_periodo(testo) or deduzioni.periodo_su_righe_separate(testo)
     d["periodo"] = periodo
     # cedolino di 13ª/14ª: cercato solo nell'intestazione (i "ratei 13ª" compaiono in ogni busta)
     intestazione = "\n".join(testo.strip().splitlines()[:6])
@@ -172,7 +189,13 @@ def analizza(testo: str) -> Report:
     if nota_cf:
         r.aggiungi("Codice fiscale corretto (OCR)", Esito.ATTENZIONE, nota_cf)
     if not cf:
-        r.aggiungi("Codice fiscale dipendente", Esito.ERRORE, "Codice fiscale non trovato")
+        from .layout import testo_da_ocr
+
+        if testo_da_ocr():  # scansione: il codice c'è ma l'OCR non l'ha letto per intero
+            r.aggiungi("Codice fiscale dipendente", Esito.ATTENZIONE,
+                       "Codice fiscale non leggibile nella scansione: verificarlo sul documento")
+        else:
+            r.aggiungi("Codice fiscale dipendente", Esito.ERRORE, "Codice fiscale non trovato")
     else:
         info = decodifica_codice_fiscale(cf)
         if info.valido:
@@ -246,8 +269,47 @@ def analizza(testo: str) -> Report:
                        + (f"; contributi IVS da {voci.righe_ivs} righe = {formatta_euro(voci.ivs_importo)}"
                           if voci.righe_ivs > 1 else ""))
 
+    # --- Intestazioni non lette (scansioni poco nitide): importi riconosciuti dai rapporti tra i numeri
+    ricavati = []
+    if d["totale_competenze"] is None:
+        d["totale_competenze"] = deduzioni.totale_competenze_da_voci(testo)
+        if d["totale_competenze"] is not None:
+            ricavati.append(f"totale competenze {formatta_euro(d['totale_competenze'])} = somma delle voci")
+    if d["contributi_dipendente"] is None:
+        ivs = deduzioni.ivs_semplice(testo)
+        if ivs:
+            d["contributi_dipendente"] = ivs[1]
+            d["imponibile_previdenziale"] = d["imponibile_previdenziale"] or ivs[0]
+            ricavati.append(f"contributi IVS {formatta_euro(ivs[1])} su {formatta_euro(ivs[0])}")
+    if d["imponibile_fiscale"] is None:
+        terna = deduzioni.terna_imponibili(testo, d["imponibile_previdenziale"])
+        if terna and (d["contributi_dipendente"] is None or terna[1] >= d["contributi_dipendente"]):
+            d["imponibile_previdenziale"], d["imponibile_fiscale"] = terna[0], terna[2]
+            d["contributi_obbligatori_totali"] = d.get("contributi_obbligatori_totali") or terna[1]
+            ricavati.append(f"imponibile previdenziale {formatta_euro(terna[0])} − contributi {formatta_euro(terna[1])}"
+                            f" = imponibile fiscale {formatta_euro(terna[2])}")
+    if d["netto"] is None:
+        d["netto"] = deduzioni.netto_vicino_accredito(testo, d["totale_competenze"])
+        if d["netto"] is not None:
+            ricavati.append(f"netto {formatta_euro(d['netto'])} letto vicino ad «ACCREDITO»/«NETTO»")
+    if ricavati:
+        r.aggiungi("Importi ricavati dai calcoli", Esito.ATTENZIONE,
+                   "Intestazioni non leggibili (scansione poco nitida): " + "; ".join(ricavati)
+                   + ". Verificare sul documento; per una lettura migliore scansionare a 300 dpi, foglio dritto, "
+                   "oppure usare il PDF originale")
+
     comp, tratt, netto = d["totale_competenze"], d["totale_trattenute"], d["netto"]
-    if netto is None and comp is not None and tratt is not None:
+    if comp is not None and netto is not None and tratt is None:
+        # trattenute non lette: si mostra quanto è stato trattenuto in tutto e di cosa si tratta
+        trattenute = comp - netto
+        contributi = d.get("contributi_obbligatori_totali") or d.get("contributi_dipendente")
+        dettaglio = f"{formatta_euro(comp)} − netto {formatta_euro(netto)} = trattenute {formatta_euro(trattenute)}"
+        if contributi is not None:
+            dettaglio += (f" (contributi {formatta_euro(contributi)} + IRPEF, addizionali e altre trattenute "
+                          f"{formatta_euro(trattenute - contributi)})")
+        esito = Esito.INFO if Decimal(0) <= trattenute <= comp / 2 else Esito.ATTENZIONE
+        r.aggiungi("Quadratura netto", esito, dettaglio + " — totale trattenute non trovato: verificare")
+    elif netto is None and comp is not None and tratt is not None:
         # netto non letto (dicitura non riconosciuta o scansione): lo si calcola, segnalandolo
         arr = (d["arrotondamento"] or 0) - (d["arrotondamento_precedente"] or 0)
         d["netto_calcolato"] = comp - tratt + arr

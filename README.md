@@ -350,6 +350,7 @@ verify_document/
   estratto_contributivo.py  estratto conto contributivo: periodi, somma contributi, anzianità
   estinzione.py       conteggio sommario di estinzione anticipata
   settori.py          settori (Privato, Pensionato, Statale, Autonomo) e documenti da chiedere
+  deduzioni.py        importi della busta ricavati dai calcoli quando l'OCR perde le intestazioni
   impegni.py          cessione del quinto, deleghe, pignoramenti, quinto cedibile
   voci.py             ricalcolo delle voci (tariffa × quantità, base × aliquota) e contributi IVS
   anonimizza.py       testo senza dati personali da inviare per l'assistenza

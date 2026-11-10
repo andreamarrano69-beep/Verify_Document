@@ -230,3 +230,48 @@ class TestBustaZucchettiMultipagina(unittest.TestCase):
         for dato in ("ROSSI", "MARIO", "RSSMRA80A01H501U", "01-01-1980"):
             self.assertNotIn(dato, a)
         self.assertIn("1.001,00", a)
+
+
+class TestBustaScansionePocoLeggibile(unittest.TestCase):
+    """Busta a colonne scansionata male: impaginazione ed errori dell'OCR di Windows, importi, date e dati INVENTATI."""
+
+    @classmethod
+    def setUpClass(cls):
+        from verify_document.cli import analizza_testo
+        from verify_document.layout import contesto_parole
+
+        cls.testo = (Path(__file__).parent / "dati" / "busta_scansione_ocr_windows.txt").read_text(encoding="utf-8")
+        with contesto_parole(parole_da_testo_a_colonne(cls.testo)):
+            cls.r = analizza_testo(cls.testo)
+
+    def test_riconosciuta_come_busta(self):
+        from verify_document.cli import riconosci_tipo
+
+        self.assertEqual(riconosci_tipo(self.testo), "busta")  # prima: «Documento anagrafico»
+        self.assertEqual(self.r.tipo_documento, "Busta paga")
+
+    def test_importi_ricavati_dai_calcoli(self):
+        d = self.r.dati
+        self.assertEqual(d["periodo"], "Ottobre 2026")                    # mese e anno su righe diverse
+        self.assertEqual(d["totale_competenze"], Decimal("1137.50"))     # somma delle 4 voci
+        self.assertEqual(d["contributi_dipendente"], Decimal("91.72"))   # riga «IVS 998,00 91,72»
+        self.assertEqual(d["imponibile_previdenziale"], Decimal("997.50"))
+        self.assertEqual(d["imponibile_fiscale"], Decimal("904.78"))     # 997,50 − 92,72
+        self.assertEqual(d["netto"], Decimal("1001.00"))                 # sopra «ACCREDITO»
+        self.assertEqual(d["nominativo"], "DE SANTIS MARCO")
+        controlli = {c.nome: c for c in self.r.controlli}
+        self.assertEqual(controlli["Importi ricavati dai calcoli"].esito, Esito.ATTENZIONE)
+        self.assertIn("€ 43,78", controlli["Quadratura netto"].dettaglio)  # IRPEF 43,10 + 0,70 − 0,02
+        self.assertEqual(controlli["Calcolo delle voci"].esito, Esito.OK)  # 110,00 × 8,75000 = 962,50
+        self.assertEqual(controlli["Codice fiscale dipendente"].esito, Esito.ATTENZIONE)  # non leggibile ≠ errore
+        self.assertNotEqual(self.r.esito_globale, Esito.ERRORE)
+
+    def test_anonimizzazione_indirizzi_e_frammenti(self):
+        from verify_document.anonimizza import anonimizza
+
+        a = anonimizza(self.testo, self.r)
+        for dato in ("VERDI", "N.5", "MILLE", "00100", "VRDLCU", "14/03/1990", "SANTIS", "MARCO", "H501 ROMA"):
+            self.assertNotIn(dato, a, dato)
+        for resta in ("1.137,50", "1.001,00", "Ottobre", "RETRIBUZIONE", "IVS"):
+            self.assertIn(resta, a, resta)
+        self.assertEqual(len(a), len(self.testo))  # stesse colonne

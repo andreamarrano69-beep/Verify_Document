@@ -169,11 +169,24 @@ python -m verify_document esempi/confronto/*.txt --confronta
 python -m verify_document esempi/pensionato/*.txt --confronta
 ```
 
-## Home: scansione per settore e prodotto
+## Home: scelta del settore
 
-Sotto la barra dei pulsanti: scegli il **settore** (👴 Pensionato, 🏢 Privato, 🏛 Statale) e poi il **prodotto**
-(Busta paga / Cedolino NoiPA, Cedolino pensione, ObisM, CU, Unico / Redditi, Estratto contributivo):
-il programma imposta il tipo di documento e apre la finestra per scegliere i file.
+All'avvio si apre la **Home** con il nome del programma, i pulsanti dei settori
+(🏢 **Privato**, 👴 **Pensionato**, 🏛 **Statale**, 💼 **Autonomo**), ⚙ Impostazioni ed Esci.
+
+Scelto il settore, in alto compaiono i **documenti da chiedere al cliente**:
+
+| Settore | Richiesti | Facoltativi |
+|---|---|---|
+| Privato | 3 buste paga, CU, documento d'identità | Unico/Redditi, estratto contributivo |
+| Pensionato | cedolino pensione, ObisM, CU, documento d'identità | Unico/Redditi |
+| Statale | 3 cedolini NoiPA, CU, documento d'identità | Unico/Redditi, estratto contributivo |
+| Autonomo | Unico/Redditi (ultimi 2 anni), documento d'identità | estratto contributivo, CU |
+
+Ogni documento è un pulsante: clic → si sceglie il file, analizzato con il tipo giusto.
+Il colore indica cosa c'è e cosa manca: **verde** caricato, **giallo** ne servono altri (es. «Buste paga 2 di 3»),
+**rosso** manca, grigio facoltativo; sotto, il riepilogo «mancano: …».
+«🏠 Home» o «Cambia settore» tornano alla Home (con la scelta di iniziare un nuovo cliente).
 
 ## Conteggio estinzione
 
@@ -328,6 +341,7 @@ verify_document/
   pensione.py         analisi cedolino pensione e certificato ObisM
   estratto_contributivo.py  estratto conto contributivo: periodi, somma contributi, anzianità
   estinzione.py       conteggio sommario di estinzione anticipata
+  settori.py          settori (Privato, Pensionato, Statale, Autonomo) e documenti da chiedere
   impegni.py          cessione del quinto, deleghe, pignoramenti, quinto cedibile
   voci.py             ricalcolo delle voci (tariffa × quantità, base × aliquota) e contributi IVS
   anonimizza.py       testo senza dati personali da inviare per l'assistenza

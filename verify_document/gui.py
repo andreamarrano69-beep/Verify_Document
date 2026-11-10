@@ -37,17 +37,15 @@ TIPI = {
     "Documento d'identità": "anagrafica",
 }
 
-# Home: prodotti da scansionare per ogni settore (etichetta del pulsante, tipo di documento in TIPI)
-SETTORI = {
-    "Pensionato": [("Cedolino pensione", "Pensione (cedolino / ObisM)"), ("ObisM", "Pensione (cedolino / ObisM)"),
-                   ("CU", "Certificazione Unica (CU)"), ("Unico / Redditi", "Modello Redditi PF"),
-                   ("Estratto contributivo", "Estratto contributivo")],
-    "Privato": [("Busta paga", "Busta paga"), ("CU", "Certificazione Unica (CU)"),
-                ("Unico / Redditi", "Modello Redditi PF"), ("Estratto contributivo", "Estratto contributivo")],
-    "Statale": [("Cedolino (NoiPA)", "Busta paga"), ("CU", "Certificazione Unica (CU)"),
-                ("Unico / Redditi", "Modello Redditi PF"), ("Estratto contributivo", "Estratto contributivo")],
+from .settori import SETTORI, documenti_estranei, riepilogo, stato_documenti  # noqa: E402
+
+COLORI_VOCE = {  # stato del documento nell'elenco del settore: (testo, sfondo)
+    "completo": ("#1e7b34", "#e6f4ea"),
+    "parziale": ("#8a5a00", "#fff4d6"),
+    "manca": ("#b3261e", "#fdecea"),
+    "facoltativo": ("#57606a", "#f4f6f8"),
 }
-ICONE_SETTORI = {"Pensionato": "👴", "Privato": "🏢", "Statale": "🏛"}
+BLU = "#1a5a96"
 
 COLORI = {
     Esito.OK: ("#1e7b34", "#e6f4ea"),
@@ -139,6 +137,7 @@ class App:
         root.bind("<Escape>", lambda _e: self.schermo_intero(False))
         self._stile()
         self._costruisci()
+        self.mostra_home()
         self.root.after(150, self._controlla_coda)
 
     # ------------------------------------------------------------------ layout
@@ -154,9 +153,13 @@ class App:
         st.configure("Esci.TButton", font=("Segoe UI", 10, "bold"), foreground="#b3261e")
 
     def _costruisci(self) -> None:
+        self.settore: str | None = None
+        self.home = self._costruisci_home()
+        self.principale = ttk.Frame(self.root)
         # Barra superiore, riga 1: azioni principali
-        barra = ttk.Frame(self.root, padding=(10, 8, 10, 2))
+        barra = ttk.Frame(self.principale, padding=(10, 8, 10, 2))
         barra.pack(fill="x")
+        ttk.Button(barra, text="🏠  Home", command=self.mostra_home).pack(side="left", padx=(0, 6))
         ttk.Button(barra, text="📂  Apri documenti…", style="Accent.TButton",
                    command=self.apri_file).pack(side="left")
         ttk.Button(barra, text="⇄  Confronta documenti", style="Accent.TButton",
@@ -177,7 +180,7 @@ class App:
         ttk.Button(barra, text="⚙  Impostazioni", command=self.apri_impostazioni).pack(side="right")
 
         # riga 2: opzioni di analisi
-        opzioni = ttk.Frame(self.root, padding=(10, 2, 10, 6))
+        opzioni = ttk.Frame(self.principale, padding=(10, 2, 10, 6))
         opzioni.pack(fill="x")
         ttk.Label(opzioni, text="Tipo di documento:").pack(side="left")
         self.var_tipo = tk.StringVar(value="Automatico")
@@ -195,24 +198,22 @@ class App:
         ttk.Button(opzioni, text="↻  Rianalizza", command=self.rianalizza).pack(side="left", padx=(10, 0))
         ttk.Button(opzioni, text="🗑  Svuota", command=self.svuota).pack(side="left", padx=6)
 
-        # riga 3 (home): scansione guidata per settore e prodotto
-        home = ttk.LabelFrame(self.root, text=" Scansione per settore e prodotto ", padding=(10, 4, 10, 6))
-        home.pack(fill="x", padx=10, pady=(0, 6))
-        ttk.Label(home, text="Settore:").pack(side="left")
-        self.var_settore = tk.StringVar(value="Privato")
-        self.pulsanti_settore: dict[str, tk.Button] = {}
-        for settore in SETTORI:
-            b = tk.Button(home, text=f"{ICONE_SETTORI[settore]} {settore}", relief="groove", bd=1, padx=10, pady=2,
-                          font=("Segoe UI", 10), cursor="hand2", command=lambda s=settore: self.scegli_settore(s))
-            b.pack(side="left", padx=2)
-            self.pulsanti_settore[settore] = b
-        ttk.Separator(home, orient="vertical").pack(side="left", fill="y", padx=10)
-        ttk.Label(home, text="Prodotto:").pack(side="left")
-        self.riquadro_prodotti = ttk.Frame(home)
-        self.riquadro_prodotti.pack(side="left", padx=4)
-        self.scegli_settore("Privato")
+        # riga 3: documenti da chiedere per il settore scelto (verdi quando caricati)
+        riquadro = tk.Frame(self.principale, bg="#ffffff", highlightthickness=1, highlightbackground="#d0d7de")
+        riquadro.pack(fill="x", padx=10, pady=(0, 6))
+        testa = tk.Frame(riquadro, bg="#ffffff")
+        testa.pack(fill="x", padx=10, pady=(6, 2))
+        self.lbl_settore = tk.Label(testa, text="", bg="#ffffff", fg=BLU, font=("Segoe UI", 13, "bold"))
+        self.lbl_settore.pack(side="left")
+        tk.Label(testa, text="   clic su un documento per caricarlo · verde = caricato, rosso = manca",
+                 bg="#ffffff", fg="#666666", font=("Segoe UI", 9)).pack(side="left")
+        ttk.Button(testa, text="Cambia settore", command=self.mostra_home).pack(side="right")
+        self.riquadro_voci = tk.Frame(riquadro, bg="#ffffff")
+        self.riquadro_voci.pack(fill="x", padx=8, pady=2)
+        self.lbl_riepilogo = tk.Label(riquadro, text="", bg="#ffffff", font=("Segoe UI", 10, "bold"), anchor="w")
+        self.lbl_riepilogo.pack(fill="x", padx=10, pady=(2, 6))
 
-        corpo = ttk.PanedWindow(self.root, orient="horizontal")
+        corpo = ttk.PanedWindow(self.principale, orient="horizontal")
         corpo.pack(fill="both", expand=True, padx=10, pady=(0, 6))
 
         # Colonna sinistra: elenco documenti
@@ -341,7 +342,7 @@ class App:
         self.var_stato = tk.StringVar(value="Pronto. Tutti i documenti vengono elaborati in locale.")
         self.avviso_ocr_mostrato = False
         self.root.after(300, self._stato_ocr)
-        stato = ttk.Frame(self.root, padding=(10, 2))
+        stato = ttk.Frame(self.principale, padding=(10, 2))
         stato.pack(fill="x", side="bottom")
         ttk.Label(stato, textvariable=self.var_stato).pack(side="left")
         self.progress = ttk.Progressbar(stato, mode="indeterminate", length=160)
@@ -379,24 +380,96 @@ class App:
             impostazioni.salva({"ultima_cartella": str(Path(percorsi[0]).parent)})
             self.aggiungi(percorsi)
 
-    def scegli_settore(self, settore: str) -> None:
-        self.var_settore.set(settore)
-        for nome, b in self.pulsanti_settore.items():
-            attivo = nome == settore
-            b.configure(bg="#1a5a96" if attivo else "#eef2f6", fg="#ffffff" if attivo else "#1f2328",
-                        activebackground="#174e83" if attivo else "#dde5ee",
-                        font=("Segoe UI", 10, "bold" if attivo else "normal"))
-        for w in self.riquadro_prodotti.winfo_children():
+    # ------------------------------------------------------------------ home
+    def _costruisci_home(self) -> tk.Frame:
+        sfondo = "#f4f6f8"
+        home = tk.Frame(self.root, bg=sfondo)
+        centro = tk.Frame(home, bg=sfondo)
+        centro.place(relx=0.5, rely=0.45, anchor="center")
+        tk.Label(centro, text="Verify Document", bg=sfondo, fg=BLU, font=("Segoe UI", 34, "bold")).pack()
+        tk.Label(centro, text="Verifica di buste paga, pensioni, CU, Modello Redditi, estratti contributivi e "
+                 "documenti d'identità", bg=sfondo, fg="#444444", font=("Segoe UI", 12)).pack(pady=(2, 0))
+        tk.Label(centro, text="Tutto in locale: nessun dato inviato su internet", bg=sfondo, fg="#777777",
+                 font=("Segoe UI", 10)).pack(pady=(0, 26))
+        tk.Label(centro, text="Scegli il settore del cliente", bg=sfondo, fg="#1f2328",
+                 font=("Segoe UI", 15, "bold")).pack(pady=(0, 12))
+        griglia = tk.Frame(centro, bg=sfondo)
+        griglia.pack()
+        for n, (nome, info) in enumerate(SETTORI.items()):
+            richiesti = ", ".join(v.etichetta for v in info["documenti"] if v.richiesto)
+            b = tk.Button(griglia, text=f"{info['icona']}\n{nome}\n", font=("Segoe UI", 20, "bold"), width=11,
+                          height=3, bg="#ffffff", fg=BLU, activebackground="#e8f0f8", activeforeground=BLU,
+                          relief="flat", bd=0, highlightthickness=2, highlightbackground="#c9d6e3", cursor="hand2",
+                          command=lambda s=nome: self.entra_settore(s))
+            b.grid(row=0, column=n, padx=10, sticky="n")
+            b.bind("<Enter>", lambda _e, w=b: w.configure(bg="#e8f0f8", highlightbackground=BLU))
+            b.bind("<Leave>", lambda _e, w=b: w.configure(bg="#ffffff", highlightbackground="#c9d6e3"))
+            tk.Label(griglia, text=info["descrizione"], bg=sfondo, fg="#444444", font=("Segoe UI", 10, "bold"),
+                     wraplength=230).grid(row=1, column=n, pady=(8, 0))
+            tk.Label(griglia, text=richiesti, bg=sfondo, fg="#777777", font=("Segoe UI", 9),
+                     wraplength=230).grid(row=2, column=n, pady=(2, 0))
+        piede = tk.Frame(home, bg=sfondo)
+        piede.pack(side="bottom", fill="x", padx=20, pady=16)
+        ttk.Button(piede, text="⏻  Esci", style="Esci.TButton", command=self.esci).pack(side="right")
+        ttk.Button(piede, text="⚙  Impostazioni", command=self.apri_impostazioni).pack(side="right", padx=8)
+        tk.Label(piede, text=f"versione {__version__}", bg=sfondo, fg="#999999",
+                 font=("Segoe UI", 9)).pack(side="left")
+        return home
+
+    def mostra_home(self) -> None:
+        self.principale.pack_forget()
+        self.home.pack(fill="both", expand=True)
+
+    def entra_settore(self, settore: str) -> None:
+        if self.settore and settore != self.settore and self.risultati and not self.in_corso:
+            nuovo = messagebox.askyesnocancel(
+                "Cambio settore", f"Sono aperti {len(self.risultati)} documenti.\n\nIniziare un nuovo cliente?\n"
+                "Sì = svuota l'elenco   ·   No = tieni i documenti", parent=self.root)
+            if nuovo is None:
+                return
+            if nuovo:
+                self.svuota()
+        self.settore = settore
+        info = SETTORI[settore]
+        self.lbl_settore.configure(text=f"{info['icona']}  {settore} — documenti del cliente")
+        self.root.title(f"Verify Document {__version__} — {settore}")
+        self.home.pack_forget()
+        self.principale.pack(fill="both", expand=True)
+        self.aggiorna_elenco_settore()
+
+    def aggiorna_elenco_settore(self) -> None:
+        """Pulsanti dei documenti del settore: verde se caricato, giallo se ne servono altri, rosso se manca."""
+        if not self.settore:
+            return
+        for w in self.riquadro_voci.winfo_children():
             w.destroy()
-        for etichetta, tipo in SETTORI[settore]:
-            ttk.Button(self.riquadro_prodotti, text=f"📄 {etichetta}",
-                       command=lambda t=tipo: self.scansiona_prodotto(t)).pack(side="left", padx=2)
+        reports = [r.report for r in self.risultati.values() if r.report]
+        stati = stato_documenti(self.settore, reports)
+        for st in stati:
+            fg, bg = COLORI_VOCE[st.stato]
+            nota = st.voce.nota or ("facoltativo" if not st.voce.richiesto else "")
+            if not st.voce.richiesto and st.stato == "facoltativo":
+                nota = f"facoltativo · {st.voce.nota}" if st.voce.nota else "facoltativo"
+            b = tk.Button(self.riquadro_voci, text=f"{st.testo}\n{nota}", justify="left", anchor="w",
+                          font=("Segoe UI", 10, "bold"), fg=fg, bg=bg, activebackground=bg, activeforeground=fg,
+                          relief="flat", bd=0, highlightthickness=1, highlightbackground=fg, padx=10, pady=4,
+                          cursor="hand2", command=lambda t=st.voce.tipo_analisi: self.scansiona_prodotto(t))
+            b.pack(side="left", padx=3, pady=3)
+        testo = riepilogo(stati)
+        estranei = documenti_estranei(self.settore, reports)
+        if estranei:
+            testo += "   ·   altri documenti aperti: " + ", ".join(estranei)
+        completo = all(s.stato == "completo" for s in stati if s.voce.richiesto)
+        self.lbl_riepilogo.configure(text=testo, fg="#1e7b34" if completo else "#8a5a00")
 
     def scansiona_prodotto(self, tipo: str) -> None:
         """Imposta il tipo di documento del prodotto scelto e apre i file."""
         self.var_tipo.set(tipo)
-        self.var_stato.set(f"{self.var_settore.get()} · {tipo}: scegli i documenti")
-        self.apri_file()
+        self.var_stato.set(f"{self.settore or ''} · {tipo}: scegli i documenti")
+        try:
+            self.apri_file()
+        finally:
+            self.var_tipo.set("Automatico")  # i file trascinati dopo vengono riconosciuti da soli
 
     def apri_estinzione(self) -> None:
         FinestraEstinzione(self.root)
@@ -688,6 +761,7 @@ class App:
         """Riepilogo per cliente: documenti presenti, cosa aggiungere per altri controlli, esito incrociato."""
         from .confronto import fascicolo
 
+        self.aggiorna_elenco_settore()
         t = self.txt_fascicolo
         t.configure(state="normal")
         t.delete("1.0", "end")

@@ -544,6 +544,16 @@ class App:
         self.lbl_home = tk.Label(centro, text="", bg=sfondo, font=_f(10, "bold"), wraplength=px(760), justify="center")
         self.lbl_home.pack(pady=(px(4), 0))
         self.progress_home = ttk.Progressbar(centro, mode="indeterminate", length=px(260))
+        riapri = tk.Frame(centro, bg=sfondo)
+        riapri.pack(pady=(px(10), 0))
+        tk.Label(riapri, text="🗂  Riapri un cliente dall'archivio:", bg=sfondo, fg="#1f2328",
+                 font=_f(10, "bold")).pack(side="left")
+        self.var_cliente_home = tk.StringVar()
+        self.combo_clienti = ttk.Combobox(riapri, textvariable=self.var_cliente_home, state="readonly", width=46)
+        self.combo_clienti.pack(side="left", padx=px(6))
+        self.combo_clienti.bind("<<ComboboxSelected>>", lambda _e: self.riapri_cliente())
+        ttk.Button(riapri, text="Apri", command=self.riapri_cliente).pack(side="left")
+        self.clienti_home: dict[str, str] = {}
         tk.Label(centro, text="oppure scegli tu il settore", bg=sfondo, fg="#1f2328",
                  font=_f(14, "bold")).pack(pady=(px(14 if COMPATTO else 22), px(8 if COMPATTO else 12)))
         griglia = tk.Frame(centro, bg=sfondo)
@@ -620,7 +630,45 @@ class App:
         self.lbl_settore.configure(text=self.lbl_settore.cget("text") + "  (riconosciuto in automatico)")
         self.var_stato.set(f"Settore riconosciuto: {settore} — {motivo}. Se è sbagliato: «Cambia settore».")
 
+    def _aggiorna_clienti_home(self) -> None:
+        from . import impostazioni
+        from .archivio import cartella_archivio, clienti_recenti
+
+        try:
+            recenti = clienti_recenti(cartella_archivio(impostazioni.carica()))
+        except OSError:
+            recenti = []
+        self.clienti_home = {f"{nome}  —  {n} documenti, {quando:%d/%m/%Y}": nome for nome, quando, n in recenti}
+        self.combo_clienti.configure(values=list(self.clienti_home) or ["(archivio vuoto)"])
+        self.var_cliente_home.set("")
+
+    def riapri_cliente(self, nome: str | None = None) -> None:
+        """Riapre tutti i documenti di un cliente dell'archivio e ne riconosce il settore (storico del cliente)."""
+        from . import impostazioni
+        from .archivio import cartella_archivio, file_cliente
+
+        nome = nome or self.clienti_home.get(self.var_cliente_home.get())
+        if not nome:
+            return
+        if self.in_corso:
+            messagebox.showwarning("Attendere", "Analisi ancora in corso.", parent=self.root)
+            return
+        file = file_cliente(cartella_archivio(impostazioni.carica()), nome)
+        if not file:
+            messagebox.showinfo("Archivio", f"Nessun documento nella cartella di {nome}.", parent=self.root)
+            return
+        if self.risultati:
+            if not messagebox.askyesno("Riapri cliente", f"Chiudere i {len(self.risultati)} documenti aperti e aprire "
+                                       f"i {len(file)} documenti di {nome}?", parent=self.root):
+                return
+            self.svuota()
+        self.settore = None
+        self.var_tipo.set("Automatico")
+        self.mostra_home()
+        self.aggiungi([str(f) for f in file])
+
     def mostra_home(self) -> None:
+        self._aggiorna_clienti_home()
         self.home_visibile = True
         self.principale.pack_forget()
         self.home.pack(fill="both", expand=True)
@@ -724,7 +772,8 @@ class App:
 
         tipo = TIPI[self.var_tipo.get()]
         ocr = self.var_ocr.get()
-        archivio = cartella_archivio(impostazioni.carica()) if self.var_archivia.get() else None
+        cartella_arch = cartella_archivio(impostazioni.carica())
+        archivio = cartella_arch if self.var_archivia.get() else None
         self.in_corso += 1
         self.progress.start(12)
         self.var_stato.set(f"Analisi in corso: {percorso.name}…")
@@ -741,6 +790,13 @@ class App:
                 from .archivio import imposta_cliente
 
                 imposta_cliente(ris.report, *self.correzioni[chiave])
+            elif ris.report is not None:
+                from .archivio import cliente_della_cartella, codice_fiscale, imposta_cliente
+
+                cliente = cliente_della_cartella(percorso, cartella_arch)
+                if cliente and cliente[1] and not codice_fiscale(ris.report):
+                    # riaperto dall'archivio: il cliente è quello della cartella (scelto o corretto in precedenza)
+                    imposta_cliente(ris.report, *cliente)
             if archivio is not None and ris.report is not None:
                 from .archivio import archivia
 
@@ -1650,6 +1706,8 @@ class FinestraArchivio:
         barra.pack(fill="x")
         ttk.Button(barra, text="📂  Apri nel programma", style="Accent.TButton",
                    command=self.apri_nel_programma).pack(side="left")
+        ttk.Button(barra, text="🗂  Apri tutto il cliente", command=self.apri_cliente_intero).pack(side="left",
+                                                                                                 padx=(6, 0))
         ttk.Button(barra, text="👤  Sposta a un cliente…", command=self.sposta_cliente).pack(side="left", padx=(6, 0))
         ttk.Button(barra, text="🗑  Elimina…", command=self.elimina).pack(side="left", padx=6)
         ttk.Button(barra, text="📁  Apri cartella", command=self.apri_cartella).pack(side="left")
@@ -1764,6 +1822,18 @@ class FinestraArchivio:
 
     def _selezionati(self) -> list[Path]:
         return list(dict.fromkeys(f for iid in self.albero.selection() for f in self._foglie(iid)))
+
+    def apri_cliente_intero(self) -> None:
+        file = self._selezionati()
+        if not file:
+            messagebox.showinfo("Archivio", "Seleziona un cliente (o un suo documento).", parent=self.win)
+            return
+        parti = file[0].relative_to(self.archivio).parts
+        if len(parti) < 2:
+            return
+        self.win.destroy()
+        self.app.riapri_cliente(parti[0])
+        self.app.root.lift()
 
     def sposta_cliente(self) -> None:
         """Sposta i documenti selezionati (es. dalla cartella «Senza codice fiscale») nella cartella del cliente."""

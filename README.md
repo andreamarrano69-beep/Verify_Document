@@ -218,6 +218,45 @@ più brevi. Per provarla o escluderla: variabile `VERIFY_DOCUMENT_COMPATTO=1` (o
   Entrate viene riconosciuta; nell'elenco del settore Autonomo «Ricevuta telematica» è verde se c'è la
   ricevuta o se il protocollo è nel modello.
 
+## Controlli incrociati con l'INPS (estratto contributivo)
+
+Con l'estratto contributivo del cliente il confronto verifica gli altri documenti con i dati dell'INPS,
+la fonte più difficile da falsificare:
+
+| Confronto | Cosa controlla |
+|---|---|
+| Busta paga ↔ estratto | la data di assunzione e i mesi delle buste hanno contributi da lavoro dipendente; stesso datore di lavoro |
+| CU ↔ estratto | imponibile previdenziale della CU = retribuzione registrata all'INPS nell'anno; giorni ↔ settimane; sostituto ↔ datore. **CU senza contributi nell'anno: errore** |
+| Unico ↔ estratto | reddito da lavoro autonomo/impresa con contributi da autonomo (gestione separata, artigiani, commercianti) |
+| Unico ↔ ricevuta | stesso anno e stesso protocollo telematico; ricevuta di scarto |
+| Pensione ↔ estratto | anni di contributi alla decorrenza rispetto ai requisiti; contributi dopo la pensione (lavora ancora) |
+
+I mesi più recenti dell'aggiornamento dell'estratto non vengono considerati mancanti (l'INPS registra i
+contributi con qualche mese di ritardo). Esempio: `esempi/confronto_inps`.
+
+## Fattibilità della cessione del quinto
+
+In ogni busta paga e cedolino pensione (gruppo «Fattibilità cessione del quinto») e nella finestra
+**💶 Fattibilità quinto**: rata massima (quinto disponibile, già tolte le cessioni in corso), delegazione,
+durata massima (120 mesi, non oltre la fine del contratto a termine, età a fine piano 70 anni per i
+dipendenti e 90 per i pensionati — modificabili), casi non cedibili (assegno sociale, invalidità civile,
+contratto scaduto, quinto già impegnato) e simulazione a 60/84/120 mesi con il capitale stimato al TAN indicato.
+
+## Scheda del cliente nel report PDF
+
+Subito dopo l'esito, il report PDF ha la **scheda del cliente per settore**: documenti presenti e mancanti,
+datore/contratto/assunzione (privati e statali), tipo e decorrenza della pensione, regime e presentazione
+telematica (autonomi), reddito mensile, anzianità contributiva, esito dei controlli con INPS/Agenzia,
+fattibilità della cessione del quinto. I punti da verificare sono evidenziati.
+
+## Storico del cliente
+
+- Home → **🗂 Riapri un cliente dall'archivio**: elenco dei clienti (il più recente in alto) — un clic e
+  tutti i suoi documenti vengono riaperti, con il settore riconosciuto
+- 🗂 Archivio → **🗂 Apri tutto il cliente**
+- un documento riaperto dalla cartella di un cliente prende nome e codice fiscale del cliente se nel
+  documento non si leggono (es. scansioni già corrette a mano)
+
 ## Conteggio estinzione
 
 **🧮 Conteggio estinzione**: inserisci rata, decorrenza, scadenza (oppure rate totali / residue) e, se noti,
@@ -379,6 +418,9 @@ verify_document/
   modello_redditi.py  analisi Modello Redditi PF
   pensione.py         analisi cedolino pensione e certificato ObisM
   estratto_contributivo.py  estratto conto contributivo: periodi, somma contributi, anzianità
+  incroci.py          controlli incrociati con l'estratto contributivo e la ricevuta telematica
+  fattibilita.py      fattibilità della cessione del quinto (rata, durata, simulazione)
+  scheda.py           scheda del cliente per settore (report PDF)
   contratto.py        tipo di contratto, orario, qualifica, livello (privati e statali)
   telematico.py       presentazione telematica del Modello Redditi e ricevuta dell'Agenzia delle Entrate
   estinzione.py       conteggio sommario di estinzione anticipata

@@ -203,3 +203,52 @@ class TestClienteSenzaCodiceFiscale(unittest.TestCase):
         copia, _ = archivia(altro, self._busta(), self.archivio)
         with self.assertRaises(ValueError):
             sposta(copia, self.archivio, "ROSSI MARIO", "BNCGPP55A10H501F")
+
+
+class TestStoricoCliente(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.archivio = self.dir / "archivio"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _archivia(self, nome, cf, contenuto, nominativo="ROSSI MARIO"):
+        from verify_document.archivio import archivia
+        from verify_document.report import Report
+
+        f = self.dir / nome
+        f.write_bytes(contenuto)
+        r = Report("Busta paga")
+        r.dati.update({"periodo": "Ottobre 2026", "nominativo": nominativo, "codice_fiscale_dipendente": cf})
+        return archivia(f, r, self.archivio)[0]
+
+    def test_file_e_clienti_recenti(self):
+        import os
+        import time
+
+        from verify_document.archivio import clienti_recenti, file_cliente
+
+        a = self._archivia("a.pdf", "RSSMRA80A01H501U", b"a")
+        self._archivia("b.pdf", "RSSMRA80A01H501U", b"b")
+        c = self._archivia("c.pdf", "BNCGPP55A10H501F", b"c", "BIANCHI GIUSEPPE")
+        vecchio = time.time() - 86400
+        os.utime(c, (vecchio, vecchio))
+        self.assertEqual(len(file_cliente(self.archivio, "ROSSI MARIO")), 2)
+        recenti = clienti_recenti(self.archivio)
+        self.assertEqual([r[0] for r in recenti], ["ROSSI MARIO", "BIANCHI GIUSEPPE"])
+        self.assertEqual(recenti[0][2], 2)
+        self.assertTrue(a.exists())
+
+    def test_cliente_della_cartella(self):
+        from verify_document.archivio import SENZA_CF, cliente_della_cartella
+
+        copia = self._archivia("a.pdf", "RSSMRA80A01H501U", b"a")
+        self.assertEqual(cliente_della_cartella(copia, self.archivio), ("ROSSI MARIO", "RSSMRA80A01H501U"))
+        senza = self._archivia("s.pdf", None, b"s", "rata conv")
+        self.assertEqual(senza.parent.parent.name, SENZA_CF)
+        self.assertIsNone(cliente_della_cartella(senza, self.archivio))
+        self.assertIsNone(cliente_della_cartella(self.dir / "fuori.pdf", self.archivio))

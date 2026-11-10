@@ -224,6 +224,34 @@ def cartella_cliente_manuale(nome: str | None, cf: str | None, archivio: Path) -
     return nome
 
 
+def file_cliente(archivio: Path, cliente: str) -> list[Path]:
+    """Tutti i documenti di un cliente (in tutte le sottocartelle)."""
+    cartella = archivio / cliente
+    if not cartella.is_dir():
+        return []
+    return sorted(f for f in cartella.rglob("*") if f.is_file() and not f.name.startswith("."))
+
+
+def clienti_recenti(archivio: Path, quanti: int = 30) -> list[tuple[str, datetime, int]]:
+    """(cliente, ultimo documento archiviato, numero di documenti), dal più recente."""
+    righe = []
+    for nome, _ in clienti(archivio):
+        file = file_cliente(archivio, nome)
+        if file:
+            righe.append((nome, datetime.fromtimestamp(max(f.stat().st_mtime for f in file)), len(file)))
+    return sorted(righe, key=lambda x: x[1], reverse=True)[:quanti]
+
+
+def cliente_della_cartella(percorso: Path, archivio: Path) -> tuple[str, str | None] | None:
+    """Per un file dell'archivio: (nome della cartella del cliente senza il CF tra parentesi, codice fiscale legato)."""
+    if not e_in_archivio(percorso, archivio):
+        return None
+    parti = Path(percorso).resolve().relative_to(archivio.resolve()).parts
+    if len(parti) < 2 or parti[0] == SENZA_CF:
+        return None
+    return parti[0].split(" (")[0], _cf_della_cartella(archivio / parti[0])
+
+
 def clienti(archivio: Path) -> list[tuple[str, str | None]]:
     """Cartelle dei clienti nell'archivio, con il codice fiscale legato (se c'è)."""
     if not archivio.is_dir():

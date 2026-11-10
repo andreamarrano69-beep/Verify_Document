@@ -152,7 +152,16 @@ def nome_cartella_cliente(report: Report | None, archivio: Path) -> str:
     """
     cf = codice_fiscale(report)
     if not cf:
-        return SENZA_CF
+        # codice fiscale non letto (scansioni): si usa il nome, se è un nome vero, e la cartella già esistente
+        nome = nominativo(report)
+        if not nome_valido(nome):
+            return SENZA_CF
+        nome = _pulisci(nome.upper())
+        if archivio.is_dir():
+            for c in sorted(archivio.iterdir()):
+                if c.is_dir() and (c.name.upper() == nome or c.name.upper().startswith(nome + " (")):
+                    return c.name
+        return nome
     if archivio.is_dir():
         for c in archivio.iterdir():
             if c.is_dir() and (_cf_della_cartella(c) == cf or c.name.startswith(cf)):
@@ -162,6 +171,94 @@ def nome_cartella_cliente(report: Report | None, archivio: Path) -> str:
     if cartella.exists() and _cf_della_cartella(cartella) not in (None, cf):
         nome = _pulisci(f"{nome} ({cf})")  # omonimo
     return nome
+
+
+def nome_valido(nome: str | None) -> bool:
+    """«ROSSI MARIO» sì; «rata conv», «E NOME», sigle o numeri letti dall'OCR no."""
+    if not nome:
+        return False
+    parole = nome.split()
+    if not 2 <= len(parole) <= 5 or not nome.replace(" ", "").replace("'", "").isalpha():
+        return False
+    if nome != nome.upper():  # nei documenti il nominativo è in maiuscolo
+        return False
+    return sum(len(p) >= 3 for p in parole) >= 2 and not {"NOME", "COGNOME", "CODICE", "FISCALE"} & set(parole)
+
+
+CHIAVI_CF = ("codice_fiscale", "codice_fiscale_dipendente", "codice_fiscale_contribuente", "codice_fiscale_pensionato")
+
+
+def imposta_cliente(report: Report, nome: str | None, cf: str | None) -> None:
+    """Nome e codice fiscale scritti a mano (lettura non riuscita): sostituiscono quelli letti nel documento."""
+    from .report import Esito
+    from .validators import decodifica_codice_fiscale
+
+    d = report.dati
+    if nome:
+        d["nominativo"] = nome.upper().strip()
+    if cf:
+        cf = cf.upper().replace(" ", "")
+        chiave = next((k for k in CHIAVI_CF if k in d), "codice_fiscale")
+        d[chiave] = cf
+        info = decodifica_codice_fiscale(cf)
+        if info.valido and info.data_nascita:
+            d.setdefault("data_nascita_da_cf", info.data_nascita)
+        report.controlli = [c for c in report.controlli if not c.nome.startswith("Codice fiscale")]
+        report.aggiungi("Codice fiscale", Esito.OK if info.valido else Esito.ERRORE,
+                        f"{cf} inserito a mano" + ("" if info.valido else " — NON valido (carattere di controllo)"))
+    report.aggiungi("Cliente inserito a mano", Esito.INFO,
+                    "Nome / codice fiscale scritti dall'operatore perché non letti nel documento: verificarli")
+
+
+def cartella_cliente_manuale(nome: str | None, cf: str | None, archivio: Path) -> str:
+    """Cartella per nome e/o codice fiscale scritti dall'operatore (il nome scritto a mano vale sempre)."""
+    if cf:
+        segnaposto = Report("")
+        segnaposto.dati.update({"nominativo": nome or None, "codice_fiscale": cf})
+        return nome_cartella_cliente(segnaposto, archivio)
+    nome = _pulisci((nome or "").upper())
+    if archivio.is_dir():
+        for c in sorted(archivio.iterdir()):
+            if c.is_dir() and (c.name.upper() == nome or c.name.upper().startswith(nome + " (")):
+                return c.name
+    return nome
+
+
+def clienti(archivio: Path) -> list[tuple[str, str | None]]:
+    """Cartelle dei clienti nell'archivio, con il codice fiscale legato (se c'è)."""
+    if not archivio.is_dir():
+        return []
+    return [(c.name, _cf_della_cartella(c)) for c in sorted(archivio.iterdir(), key=lambda x: x.name.lower())
+            if c.is_dir()]
+
+
+def sposta(percorso: Path, archivio: Path, cliente: str, cf: str | None = None) -> Path:
+    """Sposta un file dell'archivio nella cartella del cliente indicato (stessa sottocartella del prodotto)."""
+    percorso = Path(percorso)
+    if not e_in_archivio(percorso, archivio) or not percorso.is_file():
+        raise ValueError("Si possono spostare solo documenti dentro l'archivio del programma")
+    cliente = _pulisci(cliente)
+    destinazione_cliente = archivio / cliente
+    cf_cartella = _cf_della_cartella(destinazione_cliente)
+    if cf and cf_cartella and cf_cartella != cf:
+        raise ValueError(f"La cartella «{cliente}» è di un altro codice fiscale ({cf_cartella})")
+    parti = percorso.resolve().relative_to(archivio.resolve()).parts
+    categoria_file = parti[1] if len(parti) >= 3 else CATEGORIA_ALTRO
+    cartella = destinazione_cliente / categoria_file
+    if cartella.resolve() == percorso.parent.resolve():
+        return percorso
+    cartella.mkdir(parents=True, exist_ok=True)
+    if cf and not cf_cartella:
+        (destinazione_cliente / FILE_CF).write_text(cf, encoding="utf-8")
+    nuovo = cartella / percorso.name
+    n = 2
+    while nuovo.exists():
+        nuovo = cartella / f"{percorso.stem} ({n}){percorso.suffix}"
+        n += 1
+    vecchia = percorso.parent
+    shutil.move(str(percorso), str(nuovo))
+    _togli_cartelle_vuote(vecchia, archivio)
+    return nuovo
 
 
 def nome_archiviato(originale: Path, report: Report | None) -> str:

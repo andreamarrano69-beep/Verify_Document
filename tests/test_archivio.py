@@ -129,3 +129,77 @@ class TestArchivio(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestClienteSenzaCodiceFiscale(unittest.TestCase):
+    """Scansioni in cui il codice fiscale non si legge: cartella dal nome, correzione a mano, spostamento."""
+
+    def setUp(self):
+        import tempfile
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.archivio = self.dir / "archivio"
+        self.originale = self.dir / "scansione.pdf"
+        self.originale.write_bytes(b"%PDF-1.4 busta di prova")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _busta(self, nominativo=None, cf=None):
+        from verify_document.report import Report
+
+        r = Report("Busta paga")
+        r.dati.update({"periodo": "Ottobre 2026", "nominativo": nominativo, "codice_fiscale_dipendente": cf})
+        return r
+
+    def test_nome_letto_senza_cf(self):
+        from verify_document.archivio import archivia
+
+        copia, _ = archivia(self.originale, self._busta("DE SANTIS MARCO"), self.archivio)
+        self.assertEqual(copia.parent.parent.name, "DE SANTIS MARCO")
+        self.assertEqual(copia.parent.name, "Buste paga")
+
+    def test_nome_ocr_sbagliato_va_in_senza_cf(self):
+        from verify_document.archivio import SENZA_CF, archivia, nome_valido
+
+        for sbagliato in ("rata conv", "E NOME", "A B", "COGNOME E NOME", "12 ROSSI"):
+            self.assertFalse(nome_valido(sbagliato), sbagliato)
+        copia, _ = archivia(self.originale, self._busta("rata conv"), self.archivio)
+        self.assertEqual(copia.parent.parent.name, SENZA_CF)
+
+    def test_poi_arriva_il_documento_con_cf_stessa_cartella(self):
+        from verify_document.archivio import FILE_CF, archivia
+
+        archivia(self.originale, self._busta("ROSSI MARIO"), self.archivio)
+        altro = self.dir / "cu.pdf"
+        altro.write_bytes(b"%PDF-1.4 cu")
+        copia, _ = archivia(altro, self._busta("ROSSI MARIO", "RSSMRA80A01H501U"), self.archivio)
+        self.assertEqual(copia.parent.parent.name, "ROSSI MARIO")
+        self.assertEqual((self.archivio / "ROSSI MARIO" / FILE_CF).read_text(), "RSSMRA80A01H501U")
+
+    def test_correzione_a_mano_e_spostamento(self):
+        from verify_document.archivio import (SENZA_CF, archivia, cartella_cliente_manuale, codice_fiscale,
+                                              imposta_cliente, sposta)
+
+        report = self._busta()
+        copia, _ = archivia(self.originale, report, self.archivio)
+        self.assertEqual(copia.parent.parent.name, SENZA_CF)
+        imposta_cliente(report, "Rossi Mario", "rssmra80a01h501u")
+        self.assertEqual(codice_fiscale(report), "RSSMRA80A01H501U")
+        self.assertEqual(report.dati["nominativo"], "ROSSI MARIO")
+        cartella = cartella_cliente_manuale("ROSSI MARIO", "RSSMRA80A01H501U", self.archivio)
+        nuova = sposta(copia, self.archivio, cartella, "RSSMRA80A01H501U")
+        self.assertEqual((nuova.parent.parent.name, nuova.parent.name), ("ROSSI MARIO", "Buste paga"))
+        self.assertFalse((self.archivio / SENZA_CF).exists())  # cartella rimasta vuota: tolta
+        self.assertTrue(self.originale.exists())                # l'originale non si tocca
+
+    def test_non_sposta_in_cartella_di_altro_cf(self):
+        from verify_document.archivio import archivia, sposta
+
+        archivia(self.originale, self._busta("ROSSI MARIO", "RSSMRA80A01H501U"), self.archivio)
+        altro = self.dir / "b.pdf"
+        altro.write_bytes(b"%PDF-1.4 altro")
+        copia, _ = archivia(altro, self._busta(), self.archivio)
+        with self.assertRaises(ValueError):
+            sposta(copia, self.archivio, "ROSSI MARIO", "BNCGPP55A10H501F")

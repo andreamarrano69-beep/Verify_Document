@@ -250,6 +250,15 @@ documenti/
 La cartella è legata al codice fiscale (file nascosto `.codice_fiscale`): se il nome viene letto in modo
 diverso si usa la stessa cartella; un omonimo con codice fiscale diverso riceve il CF tra parentesi.
 
+**Codice fiscale non letto** (scansioni poco nitide): se il nome è leggibile il documento va comunque nella
+cartella del cliente (nomi strani letti dall'OCR sono scartati); altrimenti in «Senza codice fiscale».
+Per sistemarlo:
+- **👤 Cliente…** (sopra il dettaglio, o tasto destro sul documento): scegli un cliente già in archivio
+  oppure scrivi cognome, nome e codice fiscale (controllo immediato: valido e coerente con il nome).
+  La copia viene spostata nella cartella giusta e la correzione resta anche dopo «Rianalizza».
+- **🗂 Archivio → 👤 Sposta a un cliente…**: sposta i documenti selezionati (anche tutta la cartella
+  «Senza codice fiscale») nella cartella di un cliente, nella sottocartella dello stesso prodotto.
+
 - l'originale non viene mai toccato; lo stesso file non viene copiato due volte
 - **🗂 Archivio**: elenco per cliente, ordinabile per **periodo** del documento, data o nome (clic sull'intestazione),
   ricerca, doppio clic per riaprire, **Elimina** (anche un cliente intero) → i file vanno nel **Cestino**

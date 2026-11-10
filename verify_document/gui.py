@@ -228,6 +228,7 @@ class App:
         self.root = root
         self.dnd = dnd
         self.risultati: dict[str, Risultato] = {}
+        self.correzioni: dict[str, tuple[str, str]] = {}  # cliente scritto a mano per documento
         self.coda: queue.Queue[Risultato] = queue.Queue()
         self.in_corso = 0
 
@@ -356,6 +357,9 @@ class App:
         self.lista.bind("<<TreeviewSelect>>", lambda _e: self.mostra_selezionato())
         self.lista.bind("<Delete>", lambda _e: self.rimuovi_selezionato())
         self.menu_lista = tk.Menu(self.lista, tearoff=0)
+        self.menu_lista.add_command(label="👤 Cliente del documento (nome / codice fiscale)…",
+                                    command=self.correggi_cliente)
+        self.menu_lista.add_separator()
         self.menu_lista.add_command(label="Rimuovi dall'elenco", command=self.rimuovi_selezionato)
         self.menu_lista.add_command(label="Elimina la copia dall'archivio…",
                                     command=lambda: self.rimuovi_selezionato(elimina_copia=True))
@@ -401,6 +405,8 @@ class App:
         self.lbl_titolo.pack(side="left")
         self.lbl_esito = tk.Label(intest, text="", font=_f(12, "bold"), padx=12, pady=4)
         self.lbl_esito.pack(side="right")
+        ttk.Button(intest, text="👤 " + breve("Cliente (nome / CF)…", "Cliente…"),
+                   command=self.correggi_cliente).pack(side="right", padx=6)
 
         # Fascia di sintesi: regime / tipo di reddito e importo mensile, in grande
         st = ttk.Style(self.root)
@@ -650,6 +656,10 @@ class App:
                 ris.errore = str(e)
             except Exception as e:  # errore imprevisto: non bloccare l'interfaccia
                 ris.errore = f"Errore imprevisto: {e!r}"
+            if chiave in self.correzioni and ris.report is not None:
+                from .archivio import imposta_cliente
+
+                imposta_cliente(ris.report, *self.correzioni[chiave])
             if archivio is not None and ris.report is not None:
                 from .archivio import archivia
 
@@ -927,6 +937,38 @@ class App:
                 iniziale = voce[0].lower() if voce[1:2].islower() else voce[0]  # "CU" resta maiuscolo
                 t.insert("end", f"+ Aggiungi {iniziale}{voce[1:]}\n", "manca")
         t.configure(state="disabled")
+
+    def correggi_cliente(self) -> None:
+        """Nome e codice fiscale scritti a mano (o cliente scelto dall'archivio); la copia va nella cartella giusta."""
+        from . import impostazioni
+        from .archivio import cartella_archivio, cartella_cliente_manuale, codice_fiscale, imposta_cliente, nominativo, sposta
+
+        sel = self.lista.selection()
+        ris = self.risultati.get(sel[0]) if sel else None
+        if ris is None or ris.report is None:
+            messagebox.showinfo("Cliente", "Seleziona nell'elenco un documento già analizzato.", parent=self.root)
+            return
+        chiave = sel[0]
+        archivio = cartella_archivio(impostazioni.carica())
+        scelta = FinestraCliente(self.root, archivio, ris.percorso.name, nominativo(ris.report) or "",
+                                 codice_fiscale(ris.report) or "").risultato
+        if scelta is None:
+            return
+        nome, cf, cartella = scelta
+        self.correzioni[chiave] = (nome, cf)
+        imposta_cliente(ris.report, nome, cf)
+        messaggio = "Cliente aggiornato"
+        if ris.archiviato and ris.archiviato.exists():
+            try:
+                destinazione = cartella or cartella_cliente_manuale(nome, cf, archivio)
+                ris.archiviato = sposta(ris.archiviato, archivio, destinazione, cf or None)
+                messaggio += f": copia spostata in {ris.archiviato.parent.parent.name}\\{ris.archiviato.parent.name}"
+            except (OSError, ValueError) as e:
+                messagebox.showwarning("Archivio", f"Copia non spostata: {e}", parent=self.root)
+        # aggiorna riga, dettaglio e fascicolo come al termine di un'analisi
+        self.in_corso += 1
+        self.coda.put((chiave, ris))
+        self.var_stato.set(messaggio)
 
     def rimuovi_selezionato(self, elimina_copia: bool = False) -> None:
         sel = self.lista.selection()
@@ -1208,6 +1250,109 @@ def leggi_mese(testo: str) -> date | None:
     return date(int(m.group(3)), int(m.group(2)), int(m.group(1) or 1))
 
 
+class FinestraCliente:
+    """Sceglie il cliente di un documento: uno già in archivio oppure nome e codice fiscale scritti a mano.
+
+    ``risultato``: (nome, codice fiscale, cartella esistente scelta o None), oppure None se annullato.
+    """
+
+    def __init__(self, parent, archivio: Path, documento: str, nome: str = "", cf: str = ""):
+        from .archivio import clienti
+
+        self.risultato = None
+        self.clienti = {nome_c: cf_c for nome_c, cf_c in clienti(archivio)}
+        self.win = tk.Toplevel(parent)
+        self.win.title("Cliente del documento")
+        self.win.transient(parent)
+        self.win.resizable(False, False)
+        c = ttk.Frame(self.win, padding=px(16))
+        c.pack(fill="both", expand=True)
+        ttk.Label(c, text="Cliente del documento", style="Titolo.TLabel").grid(row=0, column=0, columnspan=2,
+                                                                            sticky="w")
+        ttk.Label(c, text=documento, foreground="#666").grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        ttk.Label(c, text="Cliente già in archivio").grid(row=2, column=0, sticky="w", pady=3)
+        self.var_cartella = tk.StringVar()
+        scelta = ttk.Combobox(c, textvariable=self.var_cartella, values=["(nuovo cliente)"] + list(self.clienti),
+                              state="readonly", width=38)
+        scelta.grid(row=2, column=1, sticky="we", pady=3)
+        scelta.bind("<<ComboboxSelected>>", lambda _e: self._scelto())
+        ttk.Label(c, text="Cognome e nome").grid(row=3, column=0, sticky="w", pady=3)
+        self.var_nome = tk.StringVar(value=nome)
+        ttk.Entry(c, textvariable=self.var_nome, width=40).grid(row=3, column=1, sticky="we", pady=3)
+        ttk.Label(c, text="Codice fiscale").grid(row=4, column=0, sticky="w", pady=3)
+        self.var_cf = tk.StringVar(value=cf)
+        e_cf = ttk.Entry(c, textvariable=self.var_cf, width=40)
+        e_cf.grid(row=4, column=1, sticky="we", pady=3)
+        self.lbl_verifica = ttk.Label(c, text="", wraplength=px(420))
+        self.lbl_verifica.grid(row=5, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        for v in (self.var_nome, self.var_cf):
+            v.trace_add("write", lambda *_: self._verifica())
+        ttk.Label(c, text="La copia del documento nell'archivio viene spostata nella cartella di questo cliente. "
+                  "L'originale non viene toccato.", foreground="#666", wraplength=px(420)).grid(
+            row=6, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        pulsanti = ttk.Frame(c)
+        pulsanti.grid(row=7, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        ttk.Button(pulsanti, text="Annulla", command=self.win.destroy).pack(side="right")
+        ttk.Button(pulsanti, text="Conferma", style="Accent.TButton", command=self._conferma).pack(side="right", padx=6)
+        self.win.bind("<Return>", lambda _e: self._conferma())
+        self.win.bind("<Escape>", lambda _e: self.win.destroy())
+        # proposta: la cartella dello stesso codice fiscale o dello stesso nome, se c'è già
+        for nome_c, cf_c in self.clienti.items():
+            if (cf and cf_c == cf) or (nome and nome_c.upper() == nome.upper()):
+                self.var_cartella.set(nome_c)
+                break
+        else:
+            self.var_cartella.set("(nuovo cliente)")
+        self._verifica()
+        e_cf.focus_set()
+        self.win.grab_set()
+        self.win.wait_window()
+
+    def _scelto(self) -> None:
+        nome_c = self.var_cartella.get()
+        if nome_c in self.clienti:
+            self.var_nome.set(nome_c.split(" (")[0])
+            if self.clienti[nome_c]:
+                self.var_cf.set(self.clienti[nome_c])
+
+    def _verifica(self) -> bool:
+        from .validators import codice_cognome, codice_nome, valida_codice_fiscale
+
+        nome = self.var_nome.get().strip().upper()
+        cf = self.var_cf.get().strip().upper().replace(" ", "")
+        if not cf:
+            self.lbl_verifica.configure(text="Senza codice fiscale la cartella sarà quella del nome indicato.",
+                                        foreground="#8a5a00")
+            return bool(nome)
+        if not valida_codice_fiscale(cf):
+            self.lbl_verifica.configure(text="⚠ Codice fiscale non valido (16 caratteri, carattere di controllo errato)",
+                                        foreground="#b3261e")
+            return False
+        parole = nome.split()
+        coerente = any(codice_cognome(" ".join(parole[:k])) + codice_nome(" ".join(parole[k:])) == cf[:6]
+                       for k in range(1, len(parole)))
+        if nome and not coerente:
+            self.lbl_verifica.configure(text="⚠ Codice fiscale valido ma non corrisponde a cognome e nome: controllare",
+                                        foreground="#8a5a00")
+        else:
+            self.lbl_verifica.configure(text="✔ Codice fiscale valido" + (" e coerente con il nome" if nome else ""),
+                                        foreground="#1e7b34")
+        return True
+
+    def _conferma(self) -> None:
+        nome = self.var_nome.get().strip().upper()
+        cf = self.var_cf.get().strip().upper().replace(" ", "")
+        if not nome and not cf:
+            messagebox.showwarning("Cliente", "Scrivi almeno il nome o il codice fiscale.", parent=self.win)
+            return
+        if cf and not self._verifica():
+            if not messagebox.askyesno("Cliente", "Il codice fiscale non è valido. Usarlo comunque?", parent=self.win):
+                return
+        cartella = self.var_cartella.get()
+        self.risultato = (nome, cf, cartella if cartella in self.clienti else None)
+        self.win.destroy()
+
+
 class FinestraEstinzione:
     """Conteggio sommario di estinzione anticipata: rata, decorrenza, scadenza, rate residue."""
 
@@ -1346,6 +1491,7 @@ class FinestraArchivio:
         barra.pack(fill="x")
         ttk.Button(barra, text="📂  Apri nel programma", style="Accent.TButton",
                    command=self.apri_nel_programma).pack(side="left")
+        ttk.Button(barra, text="👤  Sposta a un cliente…", command=self.sposta_cliente).pack(side="left", padx=(6, 0))
         ttk.Button(barra, text="🗑  Elimina…", command=self.elimina).pack(side="left", padx=6)
         ttk.Button(barra, text="📁  Apri cartella", command=self.apri_cartella).pack(side="left")
         ttk.Button(barra, text="↻  Aggiorna", command=self.aggiorna).pack(side="left", padx=6)
@@ -1459,6 +1605,38 @@ class FinestraArchivio:
 
     def _selezionati(self) -> list[Path]:
         return list(dict.fromkeys(f for iid in self.albero.selection() for f in self._foglie(iid)))
+
+    def sposta_cliente(self) -> None:
+        """Sposta i documenti selezionati (es. dalla cartella «Senza codice fiscale») nella cartella del cliente."""
+        from .archivio import cartella_cliente_manuale, sposta
+
+        file = self._selezionati()
+        if not file:
+            messagebox.showinfo("Sposta", "Seleziona uno o più documenti (o una cartella).", parent=self.win)
+            return
+        cartella_attuale = file[0].relative_to(self.archivio).parts[0] if len(file[0].relative_to(self.archivio).parts) > 1 else ""
+        nome_iniziale = "" if cartella_attuale.startswith("Senza") else cartella_attuale.split(" (")[0]
+        titolo = file[0].name if len(file) == 1 else f"{len(file)} documenti"
+        scelta = FinestraCliente(self.win, self.archivio, titolo, nome_iniziale).risultato
+        if scelta is None:
+            return
+        nome, cf, cartella = scelta
+        if cartella is None:  # nuovo cliente (o cartella già legata a quel codice fiscale / nome)
+            cartella = cartella_cliente_manuale(nome, cf, self.archivio)
+        spostati, errori = 0, []
+        for f in file:
+            try:
+                nuovo = sposta(f, self.archivio, cartella, cf or None)
+                spostati += 1
+                for ris in self.app.risultati.values():  # documento aperto nel programma: segue la copia
+                    if ris.archiviato and ris.archiviato == f:
+                        ris.archiviato = nuovo
+            except (OSError, ValueError) as e:
+                errori.append(f"{f.name}: {e}")
+        self.aggiorna()
+        self.stato.set(f"{spostati} documenti spostati in «{cartella}»" + (f" — {len(errori)} non spostati" if errori else ""))
+        if errori:
+            messagebox.showwarning("Sposta", "\n".join(errori[:10]), parent=self.win)
 
     def apri_nel_programma(self) -> None:
         file = self._selezionati()

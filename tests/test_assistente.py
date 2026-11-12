@@ -1,0 +1,163 @@
+"""Test dell'assistente AI (con un Ollama finto), dello scaricatore e delle impostazioni dell'ufficio."""
+
+import hashlib
+import json
+import tempfile
+import threading
+import time
+import unittest
+from functools import partial
+from http.server import BaseHTTPRequestHandler, HTTPServer, SimpleHTTPRequestHandler
+from pathlib import Path
+from unittest import mock
+
+from verify_document import archivio, impostazioni
+from verify_document.assistente import ollama_http, rag, scarica
+
+
+class _OllamaFinto(BaseHTTPRequestHandler):
+    vettori_calcolati = 0
+
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(json.dumps({"models": [{"name": "qwen2.5:1.5b"},
+                                                {"name": "nomic-embed-text:latest"}]}).encode())
+
+    def do_POST(self):
+        dati = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        self.send_response(200)
+        self.end_headers()
+        if self.path == "/api/embed":
+            _OllamaFinto.vettori_calcolati += len(dati["input"])
+            out = []
+            for t in dati["input"]:
+                v = [0.0] * 64
+                for w in t.lower().split():
+                    v[int(hashlib.md5(w.encode()).hexdigest(), 16) % 64] += 1
+                out.append(v)
+            self.wfile.write(json.dumps({"embeddings": out}).encode())
+        else:
+            for pezzo in ("Venti", " ore", " annue."):
+                self.wfile.write((json.dumps({"message": {"content": pezzo}, "done": False}) + "\n").encode())
+            self.wfile.write((json.dumps({"done": True}) + "\n").encode())
+
+
+class TestAssistente(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.server = HTTPServer(("127.0.0.1", 0), _OllamaFinto)
+        cls.host = f"http://127.0.0.1:{cls.server.server_port}"
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+
+    def test_indice_aree_e_risposta(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "documenti_ai"
+            (base / "OAM").mkdir(parents=True)
+            (base / "Compass").mkdir()
+            (base / "OAM" / "formazione.txt").write_text("Aggiornamento professionale dei collaboratori: venti ore "
+                                                          "annue dal 2027. " * 10, encoding="utf-8")
+            (base / "Compass" / "criteri.md").write_text("Statali: età massima a scadenza settantacinque anni. " * 10,
+                                                         encoding="utf-8")
+            cfg = rag.configurazione({"cartella_condivisa": tmp, "ollama_host": self.host})
+            cfg.indice_locale = Path(tmp) / "locale.json"
+            indice = rag.carica_indice(cfg)
+            self.assertEqual((indice.documenti("OAM"), indice.documenti("Compass"), indice.documenti("Generale")),
+                             (1, 1, 2))
+            trovati = rag.cerca(cfg, indice, "ore di aggiornamento dei collaboratori", "OAM")
+            self.assertEqual({p["fonte"] for p in trovati}, {"OAM/formazione.txt"})
+            self.assertEqual("".join(rag.rispondi(cfg, "quante ore?", trovati, "OAM")), "Venti ore annue.")
+            self.assertTrue((base / rag.NOME_INDICE).is_file())   # indice condiviso per gli altri PC
+
+            prima = _OllamaFinto.vettori_calcolati
+            rag.carica_indice(cfg)
+            self.assertEqual(_OllamaFinto.vettori_calcolati, prima)        # niente ricalcolo
+            time.sleep(0.15)
+            (base / "OAM" / "nuova.txt").write_text("Nuova circolare sul registro dei collaboratori. " * 5, encoding="utf-8")
+            rag.carica_indice(cfg)
+            self.assertEqual(_OllamaFinto.vettori_calcolati - prima, 1)    # solo il file nuovo
+
+    def test_senza_ollama(self):
+        self.assertFalse(ollama_http.disponibile("http://127.0.0.1:1"))
+        with self.assertRaises(ollama_http.ErroreOllama) as e:
+            ollama_http.modelli("http://127.0.0.1:1")
+        self.assertIn("Ollama", str(e.exception))
+        self.assertTrue(ollama_http.ha_modello(["nomic-embed-text:latest"], "nomic-embed-text"))
+
+    def test_cartella_vuota(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = rag.configurazione({"cartella_condivisa": tmp, "ollama_host": self.host})
+            with self.assertRaises(FileNotFoundError):
+                rag.carica_indice(cfg)
+
+
+class TestScarica(unittest.TestCase):
+    def test_scarica_esclude_e_aggiorna(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sito = Path(tmp) / "sito"
+            (sito / "share" / "pdfs").mkdir(parents=True)
+            for nome in ("CQ002", "s05T", "COM085"):
+                (sito / "share" / "pdfs" / f"{nome}.pdf").write_bytes(b"%PDF-1.4 prova")
+            (sito / "trasparenza.html").write_text(
+                "<html><body><nav>MENU</nav><main><h1>Trasparenza</h1><p>" + "Testo della pagina. " * 15 + "</p>"
+                "<h4>Cessione del quinto dello stipendio / pensione</h4>"
+                "<a href='/share/pdfs/CQ002.pdf'>Copia idonea per la stipula</a>"
+                "<a href='/share/pdfs/s05T.pdf'>Set Daily – non disponibile per la vendita</a>"
+                "<h4>Rilevazione trimestrale TEGM</h4><a href='/share/pdfs/COM085.pdf'>Tabella</a>"
+                "</main></body></html>", encoding="utf-8")
+            server = HTTPServer(("127.0.0.1", 0), partial(_SitoMuto, directory=str(sito)))
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            indirizzo = f"127.0.0.1:{server.server_port}"
+            fonti = {"compass": dict(scarica.FONTI["compass"], domini=[indirizzo],
+                                     pagine=[("trasparenza", f"http://{indirizzo}/trasparenza.html")])}
+            try:
+                with mock.patch.object(scarica, "FONTI", fonti), mock.patch.object(scarica, "FORZA_HTTPS", False):
+                    r = scarica.aggiorna(Path(tmp) / "out", pausa=0, avanzamento=lambda _t: None)
+                    self.assertEqual(sorted(r["nuovi"]), [
+                        "Cessione del quinto dello stipendio pensione - Copia idonea per la stipula (CQ002).pdf",
+                        "Rilevazione trimestrale TEGM - Tabella (COM085).pdf"])
+                    self.assertEqual(r["esclusi"], 1)
+                    (sito / "share" / "pdfs" / "COM085.pdf").write_bytes(b"%PDF-1.4 nuovo trimestre")
+                    r = scarica.aggiorna(Path(tmp) / "out", pausa=0, avanzamento=lambda _t: None)
+                    self.assertEqual(r["aggiornati"], ["Rilevazione trimestrale TEGM - Tabella (COM085).pdf"])
+                    self.assertEqual(r["invariati"], 1)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+
+class _SitoMuto(SimpleHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+
+class TestImpostazioniUfficio(unittest.TestCase):
+    def test_valori_ufficio_e_archivio_condiviso(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ufficio = Path(tmp) / "config_ufficio.json"
+            ufficio.write_text(json.dumps({"cartella_condivisa": r"\\SERVER\Condivisa\VD", "modello_ai": "qwen2.5:3b"}),
+                               encoding="utf-8")
+            utente = Path(tmp) / "utente" / "impostazioni.json"
+            with mock.patch.object(impostazioni, "file_ufficio", return_value=ufficio), \
+                    mock.patch.object(impostazioni, "FILE", utente):
+                self.assertEqual(impostazioni.carica()["cartella_condivisa"], r"\\SERVER\Condivisa\VD")
+                impostazioni.salva({"studio": "Agenzia", "cartella_condivisa": ""})
+                dati = impostazioni.carica()
+                self.assertEqual(dati["cartella_condivisa"], r"\\SERVER\Condivisa\VD")  # il vuoto non cancella
+                self.assertEqual(dati["studio"], "Agenzia")
+                self.assertNotIn("ollama_host", json.loads(utente.read_text(encoding="utf-8")))  # solo scelte utente
+                self.assertEqual(archivio.cartella_archivio(dati), Path(r"\\SERVER\Condivisa\VD") / "archivio")
+                impostazioni.salva({"modello_ai": "qwen2.5:0.5b"})
+                self.assertEqual(impostazioni.carica()["modello_ai"], "qwen2.5:0.5b")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -103,6 +103,31 @@ def esegui() -> int:
         root.destroy()
         return f"Tk {tk.TkVersion}"
 
+    def criteri_compass():
+        from datetime import date
+
+        from .criteri_compass import archivio_regole, motore
+
+        motore.CARTELLA_REGOLE = None
+        p = motore.Pratica(sesso="M", nascita=date(1975, 3, 15), assunzione=date(2010, 9, 1), netto=1800, tfr=25000,
+                           rata=360, durata=120, decorrenza=date(2027, 1, 1), anzianita_contributiva_mesi=300,
+                           dipendenti_azienda=200, oggi=date(2026, 11, 12))
+        for prodotto, settore in motore.SETTORI:
+            if settore != "Pensionato":
+                p.prodotto, p.settore = prodotto, settore
+                motore.verifica_pratica(p)
+        p.prodotto, p.settore = "CQS", "Dipendente privato"
+        esiti = {e.compagnia: e.livello for e in motore.verifica_pratica(p)[2]}
+        assert esiti["HDI"] == "OK" and esiti["METLIFE"] == "KO", esiti
+        scritti = archivio_regole.esporta(tmp / "condivisa", [v["regole"] for v in motore.SETTORI.values()])
+        return f"{len(motore.SETTORI)} settori, {len(scritti)} regole esportabili"
+
+    def assistente():
+        from .assistente import ollama_http, rag, scarica  # noqa: F401
+
+        pezzi = rag.dividi_in_pezzi("Testo di prova per l'assistente. " * 60)
+        return f"moduli presenti, {len(pezzi)} pezzi di testo (Ollama non richiesto)"
+
     passo("Analisi documenti di esempio", esempi)
     passo("Confronto tra documenti", confronto)
     passo("Lettura PDF e controllo autenticità", pdf_e_autenticita)
@@ -110,6 +135,8 @@ def esegui() -> int:
     passo("OCR di una busta paga scansionata (Tesseract)", ocr)
     passo("Creazione report PDF", report_pdf)
     passo("Interfaccia grafica (Tkinter)", interfaccia)
+    passo("Criteri Compass (tutti i settori)", criteri_compass)
+    passo("Assistente AI (moduli)", assistente)
     righe.append("ESITO: " + ("TUTTO OK" if not errori else f"{errori} ERRORI"))
 
     testo = "\n".join(righe)

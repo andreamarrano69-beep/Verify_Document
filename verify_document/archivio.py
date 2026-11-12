@@ -8,6 +8,7 @@
   dentro l'archivio: gli originali nelle altre cartelle non vengono mai toccati
 
 Cartella dell'archivio: impostazione "archivio"; se vuota
+- con la cartella condivisa dell'ufficio: <cartella condivisa>/archivio (tutti i PC vedono gli stessi clienti)
 - dal codice sorgente: <cartella del progetto>/documenti
 - dal programma .exe: Documenti dell'utente/Verify Document/documenti
 """
@@ -43,6 +44,9 @@ def cartella_archivio(impostazioni: dict | None = None) -> Path:
     scelta = (impostazioni or {}).get("archivio", "")
     if scelta:
         return Path(scelta)
+    condivisa = (impostazioni or {}).get("cartella_condivisa", "")
+    if condivisa:
+        return Path(condivisa) / "archivio"
     if e_eseguibile():
         return Path.home() / "Documents" / "Verify Document" / "documenti"
     return cartella_base() / "documenti"

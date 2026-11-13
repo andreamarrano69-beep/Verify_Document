@@ -85,6 +85,41 @@ class TestAssistente(unittest.TestCase):
             rag.carica_indice(cfg)
             self.assertEqual(_OllamaFinto.vettori_calcolati - prima, 1)    # solo il file nuovo
 
+    def test_riusa_vecchio_json_e_riprende_dopo_interruzione(self):
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "documenti_ai"
+            (base / "OAM").mkdir(parents=True)
+            for n in range(3):
+                (base / "OAM" / f"doc{n}.txt").write_text(f"Documento numero {n} sul registro. " * 30, encoding="utf-8")
+            cfg = rag.configurazione({"cartella_condivisa": tmp, "ollama_host": self.host})
+            cfg.indice_locale = Path(tmp) / "locale.npz"
+            firma = rag._firma(cfg)
+            # vecchio indice JSON (versione 0.13.0) con un solo file già calcolato
+            testi = rag.dividi_in_pezzi(rag.leggi_file(base / "OAM" / "doc0.txt"))
+            vecchio = {"firma": {"versione": 1, "modello": cfg.modello_embedding, "file": firma["file"]},
+                       "pezzi": [{"fonte": "OAM/doc0.txt", "testo": t} for t in testi],
+                       "vettori": [[0.1] * 64 for _ in testi]}
+            (base / rag.NOME_INDICE_VECCHIO).write_text(json.dumps(vecchio), encoding="utf-8")
+            prima = _OllamaFinto.vettori_calcolati
+            indice = rag.carica_indice(cfg)
+            self.assertEqual(indice.documenti("OAM"), 3)
+            self.assertEqual(_OllamaFinto.vettori_calcolati - prima, 2 * len(testi))   # doc0 riusato dal vecchio JSON
+            self.assertFalse((base / rag.NOME_INDICE_VECCHIO).exists())         # vecchio file cancellato
+            self.assertTrue((base / rag.NOME_INDICE).is_file())
+
+            # salvataggio parziale (programma chiuso a metà): si riprende senza ricalcolare i file pronti
+            dati = rag._leggi_indice(base / rag.NOME_INDICE)
+            solo_doc1 = [i for i, p in enumerate(dati["pezzi"]) if p["fonte"] == "OAM/doc1.txt"]
+            parziale = {"firma": {**dati["firma"], "file": {"OAM/doc1.txt": firma["file"]["OAM/doc1.txt"]}},
+                        "pezzi": [dati["pezzi"][i] for i in solo_doc1],
+                        "vettori": [dati["vettori"][i] for i in solo_doc1]}
+            for p in (base / rag.NOME_INDICE, cfg.indice_locale):
+                rag._scrivi_indice(p, parziale)
+            prima = _OllamaFinto.vettori_calcolati
+            self.assertEqual(rag.carica_indice(cfg).documenti("OAM"), 3)
+            self.assertEqual(_OllamaFinto.vettori_calcolati - prima, 2 * len(testi))   # solo doc0 e doc2
+
     def test_senza_ollama(self):
         self.assertFalse(ollama_http.disponibile("http://127.0.0.1:1"))
         with self.assertRaises(ollama_http.ErroreOllama) as e:

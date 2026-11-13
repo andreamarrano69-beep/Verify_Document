@@ -34,8 +34,18 @@ DIMENSIONE_PEZZO = 800
 SOVRAPPOSIZIONE = 150
 PEZZI_DA_USARE = 4
 
-# pulsante -> prima cartella dentro documenti_ai (None = tutti i documenti)
-AREE = {"OAM": "OAM", "Compass": "Compass", "Generale": None}
+# gruppi di documenti: ognuno ha il suo indice e si prepara solo quando serve
+#   OAM      -> documenti_ai/OAM/...
+#   Compass  -> documenti_ai/Compass/...
+#   Generale -> tutto il resto (Generale, Note, altre cartelle)
+GRUPPI = ("OAM", "Compass", "Generale")
+# pulsante -> gruppi in cui cercare
+AREE = {"OAM": ("OAM",), "Compass": ("Compass",), "Generale": ("Generale",), "Tutti": GRUPPI}
+
+
+def gruppo_di(rel: str) -> str:
+    primo = rel.split("/")[0].lower()
+    return {"oam": "OAM", "compass": "Compass"}.get(primo, "Generale")
 
 ISTRUZIONI = """Sei un assistente per un collaboratore di agente in attività finanziaria in Italia.
 Rispondi in italiano, in modo chiaro e preciso.
@@ -118,18 +128,28 @@ class Indice:
     pezzi: list[dict]
     matrice: object   # numpy array
 
-    def documenti(self, area: str = "Generale") -> int:
+    def documenti(self, area: str = "Tutti") -> int:
         return len({self.pezzi[i]["fonte"] for i in self.indici_area(area)})
 
     def indici_area(self, area: str) -> list[int]:
-        cartella = AREE.get(area)
-        if cartella is None:
-            return list(range(len(self.pezzi)))
-        return [i for i, p in enumerate(self.pezzi) if p["fonte"].split("/")[0].lower() == cartella.lower()]
+        gruppi = AREE.get(area, GRUPPI)
+        return [i for i, p in enumerate(self.pezzi) if gruppo_di(p["fonte"]) in gruppi]
+
+    @staticmethod
+    def unisci(indici: list["Indice"]) -> "Indice":
+        import numpy as np
+
+        indici = [i for i in indici if i.pezzi]
+        if not indici:
+            return Indice([], np.zeros((0, 1), dtype="float32"))
+        return Indice([p for i in indici for p in i.pezzi], np.concatenate([i.matrice for i in indici]))
 
 
-def _firma(cfg: Configurazione) -> dict:
-    return {"versione": VERSIONE_INDICE, "modello": cfg.modello_embedding, "file": elenco_file(cfg.cartella)}
+def _firma(cfg: Configurazione, gruppo: str | None = None) -> dict:
+    file = elenco_file(cfg.cartella)
+    if gruppo:
+        file = {rel: t for rel, t in file.items() if gruppo_di(rel) == gruppo}
+    return {"versione": VERSIONE_INDICE, "modello": cfg.modello_embedding, "file": file}
 
 
 def _leggi_indice(p: Path | None) -> dict | None:
@@ -166,18 +186,20 @@ def _scrivi_indice(p: Path, dati: dict) -> None:
         pass
 
 
-def _file_indice(cfg: Configurazione) -> list[Path]:
-    out = [cfg.cartella / NOME_INDICE]
+def _file_indice(cfg: Configurazione, gruppo: str) -> list[Path]:
+    nome = gruppo.lower()
+    out = [cfg.cartella / f".indice_ai_{nome}.npz"]
     if cfg.indice_locale:
-        out.append(cfg.indice_locale)
+        out.append(cfg.indice_locale.with_name(f"{cfg.indice_locale.stem}_{nome}.npz"))
     return out
 
 
 def _file_vecchi(cfg: Configurazione) -> list[Path]:
-    out = [cfg.cartella / NOME_INDICE_VECCHIO]
+    """Indici delle versioni precedenti (uno solo per tutti i documenti): servono solo a non ricalcolare."""
+    out = [cfg.cartella / NOME_INDICE, cfg.cartella / NOME_INDICE_VECCHIO]
     if cfg.indice_locale:
-        out.append(cfg.indice_locale.with_suffix(".json"))
-    return [p for p in out if p not in _file_indice(cfg)]
+        out += [cfg.indice_locale, cfg.indice_locale.with_suffix(".json")]
+    return list(dict.fromkeys(out))
 
 
 def _durata(secondi: float) -> str:
@@ -186,25 +208,53 @@ def _durata(secondi: float) -> str:
 
 
 def carica_indice(cfg: Configurazione, avanzamento: Callable[[str], None] = lambda _t: None,
-                  usa_ocr: bool = True) -> Indice:
-    """Indice aggiornato: riusa quello condiviso o locale se i documenti non sono cambiati, altrimenti lo ricrea.
+                  usa_ocr: bool = True, area: str = "Tutti") -> Indice:
+    """Indice dei documenti dell'area scelta: prepara solo i gruppi che servono (OAM, Compass, Generale)."""
+    gruppi = AREE.get(area, GRUPPI)
+    tutti = elenco_file(cfg.cartella)
+    if not tutti:
+        raise FileNotFoundError(f"Nessun documento in {cfg.cartella}. Aggiungine con «+ Documento» o «+ Nota».")
+    if not any(gruppo_di(rel) in gruppi for rel in tutti):
+        raise FileNotFoundError(f"Nessun documento nell'area {area}. Aggiungine con «+ Documento» o «+ Nota».")
+    indice = Indice.unisci([_carica_gruppo(cfg, g, avanzamento, usa_ocr) for g in gruppi])
+    avanzamento(f"Indice pronto: {len({p['fonte'] for p in indice.pezzi})} documenti ({area}).")
+    _pulisci_vecchi(cfg)
+    return indice
+
+
+def _pulisci_vecchi(cfg: Configurazione) -> None:
+    """Quando tutti i gruppi hanno il loro indice completo, i vecchi indici unici non servono più."""
+    for g in GRUPPI:
+        firma = _firma(cfg, g)
+        if firma["file"] and not any((_leggi_indice(p) or {}).get("firma") == firma for p in _file_indice(cfg, g)):
+            return
+    for p in _file_vecchi(cfg):
+        try:
+            p.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _carica_gruppo(cfg: Configurazione, gruppo: str, avanzamento: Callable[[str], None],
+                   usa_ocr: bool) -> Indice:
+    """Indice di un gruppo: riusa quello salvato se i documenti non sono cambiati, altrimenti lo ricrea.
 
     Mentre lo crea salva il lavoro ogni minuto: se il programma viene chiuso, la volta dopo riparte da lì.
     """
     import numpy as np
 
-    firma = _firma(cfg)
+    firma = _firma(cfg, gruppo)
     if not firma["file"]:
-        raise FileNotFoundError(f"Nessun documento in {cfg.cartella}. Aggiungine con «+ Documento» o «+ Nota».")
-    for p in _file_indice(cfg):
+        return Indice.unisci([])
+    for p in _file_indice(cfg, gruppo):
         dati = _leggi_indice(p)
         if dati and dati.get("firma") == firma:
-            avanzamento(f"Indice caricato ({len(dati['pezzi'])} pezzi di testo).")
+            avanzamento(f"{gruppo}: indice caricato ({len(dati['pezzi'])} pezzi di testo).")
             return Indice(dati["pezzi"], np.asarray(dati["vettori"], dtype="float32"))
 
-    # ricrea, riusando i vettori dei file non cambiati (anche da un salvataggio parziale o dal vecchio formato)
+    # ricrea, riusando i vettori dei file non cambiati (da un salvataggio parziale o dai vecchi indici unici)
     gia: dict[str, list] = {}
-    for p in _file_indice(cfg) + _file_vecchi(cfg):
+    for p in _file_indice(cfg, gruppo) + _file_vecchi(cfg):
         vecchio = _leggi_indice(p) or {}
         if vecchio.get("firma", {}).get("modello") != cfg.modello_embedding:
             continue
@@ -212,7 +262,7 @@ def carica_indice(cfg: Configurazione, avanzamento: Callable[[str], None] = lamb
         nuovi_qui: dict[str, list] = {}
         for pezzo, vettore in zip(vecchio.get("pezzi", []), vecchio.get("vettori", [])):
             fonte = pezzo["fonte"]
-            if fonte not in gia and file_vecchi.get(fonte) == firma["file"].get(fonte):
+            if fonte in firma["file"] and fonte not in gia and file_vecchi.get(fonte) == firma["file"][fonte]:
                 nuovi_qui.setdefault(fonte, []).append((pezzo, vettore))
         gia.update(nuovi_qui)
         del vecchio
@@ -227,7 +277,7 @@ def carica_indice(cfg: Configurazione, avanzamento: Callable[[str], None] = lamb
                 vettori.append(vettore)
             fatti[rel] = firma["file"][rel]
             continue
-        avanzamento(f"Leggo {n}/{totale}: {rel}")
+        avanzamento(f"{gruppo}: leggo {n}/{totale}: {rel}")
         try:
             testo = leggi_file(cfg.cartella / rel, usa_ocr)
         except Exception as e:  # file illeggibile: si salta, l'avviso resta nella barra di stato
@@ -237,13 +287,13 @@ def carica_indice(cfg: Configurazione, avanzamento: Callable[[str], None] = lamb
 
     def salva(firma_da_salvare: dict) -> None:
         dati = {"firma": firma_da_salvare, "pezzi": pezzi, "vettori": vettori}
-        for p in _file_indice(cfg):
+        for p in _file_indice(cfg, gruppo):
             _scrivi_indice(p, dati)
 
     n_nuovi = sum(len(t) for _r, t in da_fare)
     if n_nuovi:
         fatti_ora, inizio, ultimo_salvataggio = 0, time.monotonic(), time.monotonic()
-        avanzamento(f"Preparo la ricerca su {n_nuovi} pezzi di testo nuovi (la prima volta può richiedere minuti)…")
+        avanzamento(f"{gruppo}: preparo la ricerca su {n_nuovi} pezzi di testo nuovi…")
         for rel, testi in da_fare:
             for i in range(0, len(testi), LOTTO_EMBEDDING):
                 lotto = testi[i:i + LOTTO_EMBEDDING]
@@ -252,7 +302,7 @@ def carica_indice(cfg: Configurazione, avanzamento: Callable[[str], None] = lamb
                 fatti_ora += len(lotto)
                 passati = time.monotonic() - inizio
                 resto = passati / fatti_ora * (n_nuovi - fatti_ora)
-                avanzamento(f"Preparo la ricerca: {fatti_ora}/{n_nuovi} pezzi ({fatti_ora * 100 // n_nuovi}%), "
+                avanzamento(f"{gruppo}: preparo la ricerca {fatti_ora}/{n_nuovi} pezzi ({fatti_ora * 100 // n_nuovi}%), "
                             f"{_durata(resto)} rimasti. Puoi chiudere: il lavoro fatto resta salvato.")
             fatti[rel] = firma["file"][rel]
             if time.monotonic() - ultimo_salvataggio > SALVA_OGNI_SECONDI:
@@ -260,20 +310,14 @@ def carica_indice(cfg: Configurazione, avanzamento: Callable[[str], None] = lamb
                 salva({**firma, "file": dict(fatti)})
                 ultimo_salvataggio = time.monotonic()
     if not pezzi:
-        raise ValueError("Nessun testo letto dai documenti (scansioni senza OCR?).")
-
+        return Indice.unisci([])
+    # anche i file illeggibili restano nella firma: così non si riprova a leggerli a ogni apertura
     salva(firma)
-    for p in _file_vecchi(cfg):   # il vecchio indice .json (molto grande) non serve più
-        try:
-            p.unlink(missing_ok=True)
-        except OSError:
-            pass
-    avanzamento(f"Indice pronto: {len({p['fonte'] for p in pezzi})} documenti.")
     return Indice(pezzi, np.asarray(vettori, dtype="float32"))
 
 
 # ------------------------------------------------------------------ domande
-def cerca(cfg: Configurazione, indice: Indice, domanda: str, area: str = "Generale") -> list[dict]:
+def cerca(cfg: Configurazione, indice: Indice, domanda: str, area: str = "Tutti") -> list[dict]:
     import numpy as np
 
     scelti = indice.indici_area(area)

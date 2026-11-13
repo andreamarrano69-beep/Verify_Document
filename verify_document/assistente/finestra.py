@@ -42,7 +42,6 @@ def _px(n):
 class FinestraAssistente(tk.Toplevel):
     def __init__(self, genitore, impostazioni: dict, area: str = "Generale"):
         super().__init__(genitore)
-        area_iniziale = area if area in rag.AREE else "Generale"
         self.cfg = rag.configurazione(impostazioni)
         self.title("Assistente AI · documenti OAM e Compass")
         try:
@@ -53,7 +52,7 @@ class FinestraAssistente(tk.Toplevel):
         self.configure(bg=SFONDO)
         self.coda: queue.Queue = queue.Queue()
         self.indice: rag.Indice | None = None
-        self.area = "Generale"
+        self.area = area if area in rag.AREE else "Generale"
         self.occupato = False
         self._crea()
         self.protocol("WM_DELETE_WINDOW", self.chiudi)
@@ -115,7 +114,7 @@ class FinestraAssistente(tk.Toplevel):
 
         self.stato = tk.Label(self, text="", bg=SFONDO, fg=GRIGIO, anchor="w", font=("Segoe UI", 9))
         self.stato.pack(fill="x", padx=16, pady=(0, 8))
-        self.scegli_area(area_iniziale)
+        self.scegli_area(self.area)
         self._scrivi(f"Documenti in: {self.cfg.cartella}\nScegli dove cercare, scrivi la domanda e premi Invio "
                      "(Maiusc+Invio per andare a capo).\n", "info")
 

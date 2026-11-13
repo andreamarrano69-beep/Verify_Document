@@ -43,6 +43,16 @@ echo [6/6] Creazione dello zip da distribuire...
 for /f %%v in ('%PY% -c "import verify_document; print(verify_document.__version__)"') do set VER=%%v
 powershell -NoProfile -Command "Compress-Archive -Path dist\VerifyDocument -DestinationPath dist\VerifyDocument-%VER%-windows.zip -Force"
 
+set ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe
+if exist "%ISCC%" (
+    echo [+] Creazione del setup per i PC dell'ufficio...
+    "%ISCC%" /Q /DVersione=%VER% installer\VerifyDocument.iss
+    if errorlevel 1 goto errore
+    echo        Setup: dist\VerifyDocument-Setup-%VER%.exe
+) else (
+    echo [i] Inno Setup non installato: niente setup.exe ^(https://jrsoftware.org/isinfo.php^)
+)
+
 echo.
 echo FATTO! Programma: dist\VerifyDocument\VerifyDocument.exe
 echo        Da distribuire: dist\VerifyDocument-%VER%-windows.zip

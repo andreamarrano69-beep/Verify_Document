@@ -362,6 +362,62 @@ python -m verify_document.gui
 - si apre a tutto schermo; **F11** schermo intero senza bordi, **Esc** per tornare indietro
 - **⏻ Esci** (o **Ctrl+Q**, o la X della finestra) chiede conferma se ci sono documenti analizzati
 
+## Criteri Compass (verifica pratica)
+
+Pulsante **🏦 Criteri Compass**: controlla una pratica sui criteri assuntivi Compass (07/2026) per
+**CQS** (privati, privati senza TFR, parapubblici, statali, medici, pensionati) e **deleghe**
+(privati, parapubblici, statali, medici) e dice se è fattibile e, se no, **perché**.
+Se ci sono documenti analizzati, i dati (nascita, assunzione, contratto, netto, trattenute, anzianità INPS)
+sono già compilati. Per ogni assicurazione (compagnia) si inserisce l'**esito**, lo **scoring** e il
+**codice di assumibilità** ricevuti, e il programma li confronta con le tabelle.
+
+- Nel modulo **non** vanno nome e codice fiscale del cliente: servono solo i dati della pratica.
+- Le regole sono nel programma; se cambiano i criteri, si possono mettere in comune come file **JSON**
+  nella cartella condivisa (`<cartella condivisa>\regole\`, *Impostazioni → Ufficio e assistente AI →
+  Esporta le regole*) e tutti i PC le usano subito.
+
+## Assistente AI (facoltativo)
+
+Pulsante **🤖 Assistente AI**: risponde alle domande sui documenti OAM, Compass e di settore, citando
+il documento da cui prende la risposta, e può spiegare l'esito della verifica Compass.
+Funziona **sul PC**, senza internet, con [Ollama](https://ollama.com) (modello consigliato
+`qwen2.5:1.5b` con 8 GB di RAM, `qwen2.5:3b` con 16 GB, più `nomic-embed-text`):
+se mancano, il programma propone di scaricarli.
+
+- I documenti dell'assistente stanno in `<cartella condivisa>\documenti_ai\` (sottocartelle `oam`,
+  `compass`, `generale`), comuni a tutto l'ufficio; senza cartella condivisa in
+  `%USERPROFILE%\.verify_document\documenti_ai\`.
+- **Non** mettere lì documenti dei clienti (buste paga, documenti d'identità, contratti firmati):
+  solo normativa, manuali, circolari e criteri.
+
+## Uso in ufficio (più PC e cartella condivisa)
+
+Ogni PC ha il suo programma (installato con il setup) e lavora per conto suo; i PC condividono solo
+una **cartella del server**, ad esempio `\\SERVER\Condivisa\VerifyDocument`:
+
+```
+\\SERVER\Condivisa\VerifyDocument\
+    archivio\        ← fascicoli dei clienti (archivio comune)
+    regole\          ← regole Compass in JSON (facoltative)
+    documenti_ai\    ← documenti per l'assistente AI
+```
+
+**Installazione su ogni PC** – eseguire `VerifyDocument-Setup-<versione>.exe`
+(da GitHub: *Actions → Crea exe Windows → Artifacts*, oppure dalla Release). Il setup chiede la cartella
+condivisa e il modello AI e, se si spunta *Installa anche l'assistente AI*, scarica e installa Ollama.
+Le scelte sono salvate in `config_ufficio.json` accanto al programma e si cambiano da
+*Impostazioni → Ufficio e assistente AI*. Installazione senza domande:
+
+```
+VerifyDocument-Setup-0.13.0.exe /SILENT /CARTELLA="\\SERVER\Condivisa\VerifyDocument" /MODELLO=qwen2.5:1.5b
+```
+
+(aggiungere `/TASKS="desktop,ollama"` per icona e assistente AI).
+
+**Sicurezza e privacy (GDPR)**: la cartella condivisa deve essere accessibile **solo al personale
+dell'ufficio** (permessi di condivisione di Windows); il programma non apre porte e non va mai esposto
+su internet; Ollama resta su `http://localhost:11434`. Fare un backup periodico della cartella condivisa.
+
 ## Programma per Windows (.exe)
 
 Il programma si può distribuire come **VerifyDocument.exe**, senza bisogno di installare Python.
@@ -378,6 +434,7 @@ crea il programma, lo verifica e prepara lo zip). Per includere l'OCR serve Tess
 
 ```
 dist\VerifyDocument\VerifyDocument.exe            ← il programma
+dist\VerifyDocument-Setup-<versione>.exe          ← setup per i PC dell'ufficio (se c'è Inno Setup)
 dist\VerifyDocument-<versione>-windows.zip         ← da consegnare ai clienti
 ```
 

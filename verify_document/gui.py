@@ -291,6 +291,9 @@ class App:
         menu_esporta["menu"] = menu
         ttk.Button(azioni, text="🗂  Archivio", command=self.apri_archivio)
         ttk.Button(azioni, text="💶  " + breve("Fattibilità quinto", "Quinto"), command=self.apri_quinto)
+        ttk.Button(azioni, text="🏦  " + breve("Criteri Compass", "Compass"), style="Accent.TButton",
+                   command=self.apri_criteri)
+        ttk.Button(azioni, text="🤖  " + breve("Assistente AI", "AI"), command=self.apri_assistente)
         ttk.Button(azioni, text="🧮  " + breve("Conteggio estinzione", "Estinzione"), command=self.apri_estinzione)
         azioni.aggiorna()
 
@@ -588,6 +591,8 @@ class App:
         piede.pack(side="bottom", fill="x", padx=20, pady=16)
         ttk.Button(piede, text="⏻  Esci", style="Esci.TButton", command=self.esci).pack(side="right")
         ttk.Button(piede, text="⚙  Impostazioni", command=self.apri_impostazioni).pack(side="right", padx=8)
+        ttk.Button(piede, text="🤖  Assistente AI", command=self.apri_assistente).pack(side="right")
+        ttk.Button(piede, text="🏦  Criteri Compass", command=self.apri_criteri).pack(side="right", padx=8)
         tk.Label(piede, text=f"versione {__version__}", bg=sfondo, fg="#999999",
                  font=_f(9)).pack(side="left")
         return home
@@ -745,6 +750,31 @@ class App:
 
     def apri_estinzione(self) -> None:
         FinestraEstinzione(self.root)
+
+    def apri_criteri(self) -> None:
+        """Verifica dei criteri assuntivi Compass, compilata con i dati dei documenti aperti."""
+        from . import impostazioni
+        from .criteri_compass import da_documenti, motore
+        from .criteri_compass.finestra import FinestraVerifica
+
+        imp = impostazioni.carica()
+        motore.CARTELLA_REGOLE = imp.get("cartella_condivisa") or None
+        reports = [r.report for r in self.risultati.values() if r.report]
+        campi, note = da_documenti.da_reports(reports, self.settore)
+        if not reports:
+            note = ["Nessun documento aperto: compila i campi a mano (oppure apri prima i documenti del cliente)."]
+        try:
+            from .assistente.finestra import funzione_spiega
+            spiega = funzione_spiega(imp)
+        except Exception:  # assistente non disponibile: la verifica funziona lo stesso
+            spiega = None
+        FinestraVerifica(self.root, campi, note, spiega)
+
+    def apri_assistente(self) -> None:
+        from . import impostazioni
+        from .assistente.finestra import FinestraAssistente
+
+        FinestraAssistente(self.root, impostazioni.carica())
 
     def aggiungi(self, percorsi) -> None:
         if self.home_visibile and percorsi:  # caricati dalla Home: poi si riconosce il settore
@@ -1338,7 +1368,9 @@ class FinestraImpostazioni:
         ttk.Label(corpo, text=f"Salvate in: {impostazioni.FILE}", foreground="#666").grid(
             row=riga + 2, column=0, columnspan=3, sticky="w", pady=(8, 0))
         pulsanti = ttk.Frame(corpo)
-        pulsanti.grid(row=riga + 3, column=0, columnspan=3, sticky="e", pady=(12, 0))
+        pulsanti.grid(row=riga + 3, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        ttk.Button(pulsanti, text="🏢  Ufficio e assistente AI…",
+                   command=lambda: FinestraUfficio(self.win)).pack(side="left")
         ttk.Button(pulsanti, text="Annulla", command=self.win.destroy).pack(side="right")
         ttk.Button(pulsanti, text="Salva", style="Accent.TButton", command=self._salva).pack(side="right", padx=6)
         self.win.grab_set()
@@ -1371,6 +1403,158 @@ class FinestraImpostazioni:
             return
         self.imp.salva(dati)
         self.win.destroy()
+
+
+class FinestraUfficio:
+    """Cartella condivisa del server (archivio clienti, regole Compass, documenti AI) e assistente AI (Ollama)."""
+
+    MODELLI = ["qwen2.5:1.5b", "qwen2.5:3b", "qwen2.5:0.5b", "llama3.2:3b"]
+
+    def __init__(self, parent):
+        from . import impostazioni
+
+        self.imp = impostazioni
+        dati = impostazioni.carica()
+        self.win = tk.Toplevel(parent)
+        self.win.title("Ufficio e assistente AI")
+        self.win.transient(parent)
+        self.win.resizable(False, False)
+        c = ttk.Frame(self.win, padding=16)
+        c.pack(fill="both", expand=True)
+        self.var = {k: tk.StringVar(value=dati.get(k, "")) for k in
+                    ("cartella_condivisa", "ollama_host", "modello_ai", "modello_embedding")}
+
+        ttk.Label(c, text="Cartella condivisa dell'ufficio", style="Titolo.TLabel").grid(
+            row=0, column=0, columnspan=3, sticky="w")
+        ttk.Label(c, text="Cartella").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(c, textvariable=self.var["cartella_condivisa"], width=52).grid(row=1, column=1, sticky="we",
+                                                                                 pady=(6, 0))
+        ttk.Button(c, text="Scegli…", command=self._scegli).grid(row=1, column=2, padx=(6, 0), pady=(6, 0))
+        ufficio = impostazioni.file_ufficio()
+        ttk.Label(c, text="es. \\\\SERVER\\Condivisa\\VerifyDocument — dentro vengono create le cartelle «archivio» "
+                  "(clienti), «regole» (criteri Compass) e «documenti_ai» (OAM, Compass, note). Vuota = niente "
+                  f"condivisione. Valore dell'ufficio: {ufficio}", foreground="#666", wraplength=px(560),
+                  justify="left").grid(row=2, column=1, columnspan=2, sticky="w")
+        ttk.Button(c, text="Esporta le regole Compass nella cartella condivisa",
+                   command=self._esporta_regole).grid(row=3, column=1, sticky="w", pady=(6, 0))
+        ttk.Label(c, text="Poi le regole si aggiornano una volta sola sul server (file .json in «regole») e valgono "
+                  "per tutti i PC.", foreground="#666", wraplength=px(560)).grid(row=4, column=1, columnspan=2,
+                                                                                  sticky="w")
+
+        ttk.Separator(c).grid(row=5, column=0, columnspan=3, sticky="ew", pady=12)
+        ttk.Label(c, text="Assistente AI (facoltativo)", style="Titolo.TLabel").grid(
+            row=6, column=0, columnspan=3, sticky="w")
+        ttk.Label(c, text="Indirizzo di Ollama").grid(row=7, column=0, sticky="w", pady=3)
+        ttk.Entry(c, textvariable=self.var["ollama_host"], width=52).grid(row=7, column=1, sticky="we", pady=3)
+        ttk.Label(c, text="http://localhost:11434 se Ollama è su questo PC; per usare quello di un altro PC: "
+                  "http://NOME-PC:11434 (su quel PC impostare OLLAMA_HOST=0.0.0.0)", foreground="#666",
+                  wraplength=px(560)).grid(row=8, column=1, columnspan=2, sticky="w")
+        ttk.Label(c, text="Modello per le risposte").grid(row=9, column=0, sticky="w", pady=3)
+        ttk.Combobox(c, textvariable=self.var["modello_ai"], values=self.MODELLI, width=24).grid(
+            row=9, column=1, sticky="w", pady=3)
+        ttk.Label(c, text="8 GB di RAM: qwen2.5:1.5b · 16 GB: qwen2.5:3b (più preciso, più lento)",
+                  foreground="#666").grid(row=10, column=1, columnspan=2, sticky="w")
+        ttk.Label(c, text="Modello per la ricerca").grid(row=11, column=0, sticky="w", pady=3)
+        ttk.Entry(c, textvariable=self.var["modello_embedding"], width=26).grid(row=11, column=1, sticky="w", pady=3)
+        prove = ttk.Frame(c)
+        prove.grid(row=12, column=1, columnspan=2, sticky="w", pady=(6, 0))
+        ttk.Button(prove, text="Prova il collegamento", command=self._prova).pack(side="left")
+        ttk.Button(prove, text="Scarica i modelli", command=self._scarica_modelli).pack(side="left", padx=6)
+        self.lbl_ai = ttk.Label(c, text="", foreground="#666", wraplength=px(560))
+        self.lbl_ai.grid(row=13, column=1, columnspan=2, sticky="w", pady=(4, 0))
+
+        pulsanti = ttk.Frame(c)
+        pulsanti.grid(row=14, column=0, columnspan=3, sticky="e", pady=(14, 0))
+        ttk.Button(pulsanti, text="Chiudi", command=self.win.destroy).pack(side="right")
+        ttk.Button(pulsanti, text="Salva", style="Accent.TButton", command=self._salva).pack(side="right", padx=6)
+        self.win.grab_set()
+
+    def _scegli(self) -> None:
+        cartella = filedialog.askdirectory(parent=self.win, title="Cartella condivisa dell'ufficio",
+                                           initialdir=self.var["cartella_condivisa"].get() or None)
+        if cartella:
+            self.var["cartella_condivisa"].set(cartella)
+
+    def _dati(self) -> dict:
+        return {k: v.get().strip() for k, v in self.var.items()}
+
+    def _salva(self) -> None:
+        dati = self._dati()
+        if dati["cartella_condivisa"] and not Path(dati["cartella_condivisa"]).is_dir():
+            if not messagebox.askyesno("Cartella condivisa", "La cartella non è raggiungibile ora (server spento o "
+                                       "rete assente?). Salvare lo stesso?", parent=self.win):
+                return
+        self.imp.salva(dati)
+        self.win.destroy()
+
+    def _esporta_regole(self) -> None:
+        from .criteri_compass import archivio_regole
+        from .criteri_compass.motore import SETTORI
+
+        cartella = self.var["cartella_condivisa"].get().strip()
+        if not cartella or not Path(cartella).is_dir():
+            messagebox.showwarning("Regole Compass", "Indica prima una cartella condivisa raggiungibile.",
+                                   parent=self.win)
+            return
+        nomi = [v["regole"] for v in SETTORI.values()]
+        esistenti = [n for n in nomi if archivio_regole.file_json(n, cartella).exists()]
+        sovrascrivi = False
+        if esistenti:
+            risposta = messagebox.askyesnocancel(
+                "Regole Compass", f"Nella cartella ci sono già {len(esistenti)} file di regole.\n\n"
+                "Sì = sostituiscili con quelle del programma (le modifiche fatte sul server si perdono)\n"
+                "No = aggiungi solo quelli mancanti", parent=self.win)
+            if risposta is None:
+                return
+            sovrascrivi = risposta
+        try:
+            scritti = archivio_regole.esporta(cartella, nomi, sovrascrivi)
+        except OSError as e:
+            messagebox.showerror("Regole Compass", f"Impossibile scrivere nella cartella:\n{e}", parent=self.win)
+            return
+        messagebox.showinfo("Regole Compass", f"{len(scritti)} file scritti in:\n"
+                            f"{Path(cartella) / archivio_regole.CARTELLA_JSON}", parent=self.win)
+
+    def _prova(self) -> None:
+        from .assistente import ollama_http
+
+        dati = self._dati()
+        try:
+            installati = ollama_http.modelli(dati["ollama_host"])
+        except ollama_http.ErroreOllama as e:
+            self.lbl_ai.configure(text=f"✘ {e}", foreground="#b3261e")
+            return
+        mancanti = [m for m in (dati["modello_ai"], dati["modello_embedding"])
+                    if not ollama_http.ha_modello(installati, m)]
+        if mancanti:
+            self.lbl_ai.configure(text=f"Ollama risponde, ma mancano: {', '.join(mancanti)} → «Scarica i modelli».",
+                                  foreground="#8a5a00")
+        else:
+            self.lbl_ai.configure(text="✔ Ollama risponde e i modelli sono pronti.", foreground="#1e7b34")
+
+    def _scarica_modelli(self) -> None:
+        import threading
+
+        from .assistente import ollama_http
+
+        dati = self._dati()
+        self.lbl_ai.configure(text="Scarico i modelli (circa 1-2 GB, qualche minuto)…", foreground="#666")
+
+        def aggiorna(testo, colore="#666"):
+            try:
+                self.win.after(0, lambda: self.lbl_ai.configure(text=testo, foreground=colore))
+            except tk.TclError:
+                pass
+
+        def lavoro():
+            try:
+                for modello in (dati["modello_embedding"], dati["modello_ai"]):
+                    for stato in ollama_http.scarica_modello(dati["ollama_host"], modello):
+                        aggiorna(stato)
+                aggiorna("✔ Modelli scaricati: l'assistente è pronto.", "#1e7b34")
+            except ollama_http.ErroreOllama as e:
+                aggiorna(f"✘ {e}", "#b3261e")
+        threading.Thread(target=lavoro, daemon=True).start()
 
 
 from datetime import date  # noqa: E402  (usato dalla finestra archivio)

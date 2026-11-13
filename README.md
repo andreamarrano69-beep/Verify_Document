@@ -384,6 +384,11 @@ Funziona **sul PC**, senza internet, con [Ollama](https://ollama.com) (modello c
 `qwen2.5:1.5b` con 8 GB di RAM, `qwen2.5:3b` con 16 GB, più `nomic-embed-text`):
 se mancano, il programma propone di scaricarli.
 
+- La finestra si apre a tutto schermo. Si sceglie dove cercare: **OAM**, **Compass**, **Generale**
+  (tutti gli altri documenti e le note) o **Tutti**. Viene preparato **solo l'indice dell'area scelta**
+  (un file per area nella cartella dei documenti), quindi la prima volta si aspetta solo per quei documenti;
+  le volte dopo l'indice si carica subito e si ricalcolano solo i file nuovi o cambiati.
+
 - I documenti dell'assistente stanno in `<cartella condivisa>\documenti_ai\` (sottocartelle `oam`,
   `compass`, `generale`), comuni a tutto l'ufficio; senza cartella condivisa in
   `%USERPROFILE%\.verify_document\documenti_ai\`.

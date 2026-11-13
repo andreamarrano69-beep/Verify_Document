@@ -25,7 +25,7 @@ SFONDO = "#f5f7fa"
 BIANCO = "#ffffff"
 VERDE = "#2e7d32"
 ROSSO = "#c62828"
-COLORE_AREA = {"OAM": "#7b3fa0", "Compass": "#d35400", "Generale": BLU}
+COLORE_AREA = {"OAM": "#7b3fa0", "Compass": "#d35400", "Generale": BLU, "Tutti": "#374151"}
 CARTELLA_NOTE = {"OAM": Path("OAM") / "note", "Compass": Path("Compass") / "note", "Generale": Path("Note")}
 CARTELLA_AGGIUNTI = {"OAM": Path("OAM") / "aggiunti_a_mano", "Compass": Path("Compass") / "aggiunti_a_mano",
                      "Generale": Path("Generale")}
@@ -40,24 +40,46 @@ def _px(n):
 
 
 class FinestraAssistente(tk.Toplevel):
-    def __init__(self, genitore, impostazioni: dict, area: str = "Generale"):
+    def __init__(self, genitore, impostazioni: dict, area: str | None = None):
+        """area: "OAM", "Compass", "Generale" o "Tutti"; None = l'utente sceglie (si prepara solo quella)."""
         super().__init__(genitore)
         self.cfg = rag.configurazione(impostazioni)
-        self.title("Assistente AI · documenti OAM e Compass")
+        self.title("Assistente AI · documenti OAM, Compass e generali")
         try:
             from ..gui import adatta_finestra
             adatta_finestra(self, 1000, 720)
         except Exception:
             self.geometry("1000x720")
+        self._a_tutto_schermo()
         self.configure(bg=SFONDO)
         self.coda: queue.Queue = queue.Queue()
-        self.indice: rag.Indice | None = None
-        self.area = area if area in rag.AREE else "Generale"
+        self.gruppi: dict[str, rag.Indice] = {}   # indici già pronti: OAM, Compass, Generale
+        self.area = area if area in rag.AREE else None
         self.occupato = False
+        self._riprova = False
         self._crea()
         self.protocol("WM_DELETE_WINDOW", self.chiudi)
         self.after(100, self._leggi_coda)
-        self.after(300, self.prepara)
+        if self.area:
+            self.after(300, self.prepara)
+
+    def _a_tutto_schermo(self):
+        try:
+            self.state("zoomed")  # Windows
+        except tk.TclError:
+            try:
+                self.attributes("-zoomed", True)  # Linux
+            except tk.TclError:
+                pass
+
+    def _pronta(self, area: str | None) -> bool:
+        return bool(area) and all(g in self.gruppi for g in rag.AREE[area])
+
+    @property
+    def indice(self) -> rag.Indice | None:
+        if not self._pronta(self.area):
+            return None
+        return rag.Indice.unisci([self.gruppi[g] for g in rag.AREE[self.area]])
 
     # ================= INTERFACCIA =================
     def _crea(self):
@@ -69,7 +91,7 @@ class FinestraAssistente(tk.Toplevel):
                  font=("Segoe UI", 9)).pack(side="left")
         self._pulsante(alto, "Chiudi", self.chiudi, ROSSO, BIANCO).pack(side="right", padx=(6, 12), pady=8)
         for testo, comando in [("Apri cartella", self.apri_cartella), ("Scarica dai siti", self.scarica_dai_siti),
-                               ("Aggiorna", self.prepara), ("+ Nota", self.aggiungi_nota),
+                               ("Aggiorna", self.aggiorna), ("+ Nota", self.aggiungi_nota),
                                ("+ Documento", self.aggiungi_documento)]:
             self._pulsante(alto, testo, comando, BLU_SCURO, BIANCO).pack(side="right", padx=2, pady=8)
 
@@ -115,8 +137,11 @@ class FinestraAssistente(tk.Toplevel):
         self.stato = tk.Label(self, text="", bg=SFONDO, fg=GRIGIO, anchor="w", font=("Segoe UI", 9))
         self.stato.pack(fill="x", padx=16, pady=(0, 8))
         self.scegli_area(self.area)
-        self._scrivi(f"Documenti in: {self.cfg.cartella}\nScegli dove cercare, scrivi la domanda e premi Invio "
+        self._scrivi(f"Documenti in: {self.cfg.cartella}\nScegli dove cercare (OAM, Compass, Generale o Tutti): "
+                     "vengono preparati solo i documenti di quell'area. Poi scrivi la domanda e premi Invio "
                      "(Maiusc+Invio per andare a capo).\n", "info")
+        if not self.area:
+            self.stato.configure(text="Scegli dove cercare: OAM, Compass, Generale o Tutti.", fg=GRIGIO)
 
     def _pulsante(self, genitore, testo, comando, sfondo, colore):
         return tk.Button(genitore, text=testo, command=comando, bg=sfondo, fg=colore, activebackground=colore,
@@ -139,9 +164,20 @@ class FinestraAssistente(tk.Toplevel):
         self.area = nome
         for n, p in self.pulsanti_area.items():
             p.configure(bg=COLORE_AREA[n] if n == nome else BIANCO, fg=BIANCO if n == nome else COLORE_AREA[n])
+        if not nome:
+            return
         self.pulsante_chiedi.configure(bg=COLORE_AREA[nome])
-        if self.indice is not None:
-            self.lbl_conteggio.configure(text=f"{self.indice.documenti(nome)} documenti")
+        indice = self.indice
+        if indice is not None:
+            self.lbl_conteggio.configure(text=f"{indice.documenti(nome)} documenti")
+            self.stato.configure(text=f"Pronto · {nome}: {indice.documenti(nome)} documenti · "
+                                      f"modello {self.cfg.modello}", fg=VERDE)
+        else:
+            self.lbl_conteggio.configure(text="")
+            if self.occupato:
+                self._riprova = True   # finito il lavoro in corso, prepara quest'area
+            elif hasattr(self, "stato"):
+                self.prepara()
 
     # ================= LAVORI IN SECONDO PIANO =================
     def _in_background(self, lavoro, messaggio):
@@ -160,7 +196,20 @@ class FinestraAssistente(tk.Toplevel):
                 self.coda.put(("fine", None))
         threading.Thread(target=esegui, daemon=True).start()
 
+    def aggiorna(self):
+        """Pulsante Aggiorna: rilegge i documenti dell'area (solo quelli nuovi o cambiati vengono ricalcolati)."""
+        self.gruppi.clear()
+        if not self.area:
+            self.stato.configure(text="Scegli dove cercare: OAM, Compass, Generale o Tutti.", fg=GRIGIO)
+            return
+        self.prepara()
+
     def prepara(self):
+        area = self.area
+        if not area or self._pronta(area):
+            return
+        mancano_gruppi = [g for g in rag.AREE[area] if g not in self.gruppi]
+
         def lavoro():
             installati = ollama_http.modelli(self.cfg.host)
             mancanti = [m for m in (self.cfg.modello, self.cfg.modello_embedding)
@@ -168,15 +217,28 @@ class FinestraAssistente(tk.Toplevel):
             if mancanti:
                 self.coda.put(("mancano", mancanti))
                 return
-            indice = rag.carica_indice(self.cfg, lambda t: self.coda.put(("stato", t)))
-            self.coda.put(("indice", indice))
-        self._in_background(lavoro, "Preparo i documenti…")
+            pronti = {g: self.gruppi[g] for g in rag.AREE[area] if g in self.gruppi}
+            for g in mancano_gruppi:
+                try:
+                    pronti[g] = rag.carica_indice(self.cfg, lambda t: self.coda.put(("stato", t)), area=g)
+                except FileNotFoundError:
+                    pronti[g] = rag.Indice.unisci([])   # nessun documento in questo gruppo
+                self.coda.put(("gruppo", (g, pronti[g])))
+            if not any(i.pezzi for i in pronti.values()):
+                self.coda.put(("info", f"\nNessun documento nell'area {area}: aggiungine con «+ Documento» o "
+                                       "«+ Nota».\n"))
+        self._in_background(lavoro, f"Preparo i documenti dell'area {area}…")
 
     def chiedi(self):
         testo = self.domanda.get("1.0", "end").strip()
         if not testo or self.occupato:
             return
-        if self.indice is None:
+        if not self.area:
+            messagebox.showinfo("Assistente AI", "Scegli prima dove cercare: OAM, Compass, Generale o Tutti.",
+                                parent=self)
+            return
+        indice = self.indice
+        if indice is None:
             messagebox.showinfo("Assistente AI", "I documenti non sono ancora pronti (vedi la barra in basso).",
                                 parent=self)
             return
@@ -187,7 +249,7 @@ class FinestraAssistente(tk.Toplevel):
         self._scrivi("RISPOSTA\n", "risposta_titolo")
 
         def lavoro():
-            trovati = rag.cerca(self.cfg, self.indice, testo, area)
+            trovati = rag.cerca(self.cfg, indice, testo, area)
             if not trovati:
                 self.coda.put(("testo", f"Nessun documento nell'area {area}."))
                 return
@@ -234,11 +296,11 @@ class FinestraAssistente(tk.Toplevel):
                 tipo, dato = self.coda.get_nowait()
                 if tipo == "stato":
                     self.stato.configure(text=dato, fg=GRIGIO)
-                elif tipo == "indice":
-                    self.indice = dato
-                    self.stato.configure(text=f"Pronto · {self.indice.documenti('Generale')} documenti · "
-                                              f"modello {self.cfg.modello}", fg=VERDE)
-                    self.scegli_area(self.area)
+                elif tipo == "gruppo":
+                    gruppo, indice = dato
+                    self.gruppi[gruppo] = indice
+                    if self._pronta(self.area):
+                        self.scegli_area(self.area)
                 elif tipo == "testo":
                     self._scrivi(dato, "risposta")
                 elif tipo == "fonti":
@@ -251,11 +313,14 @@ class FinestraAssistente(tk.Toplevel):
                     self._scrivi("\n" + dato + "\n", "errore")
                     self.stato.configure(text="Assistente non pronto", fg=ROSSO)
                 elif tipo == "ricarica":
-                    self.after(200, self.prepara)
+                    self.after(200, self.aggiorna)
                 elif tipo == "mancano":
                     self.after(100, lambda m=dato: self._proponi_modelli(m))
                 elif tipo == "fine":
                     self._occupa(False)
+                    if self._riprova:
+                        self._riprova = False
+                        self.after(100, self.prepara)
         except queue.Empty:
             pass
         if self.winfo_exists():
@@ -272,7 +337,7 @@ class FinestraAssistente(tk.Toplevel):
         tk.Label(win, text=domanda, bg=SFONDO, font=("Segoe UI", 11)).pack(padx=20, pady=(16, 10))
         riga = tk.Frame(win, bg=SFONDO)
         riga.pack(padx=20, pady=(0, 16))
-        for nome in rag.AREE:
+        for nome in rag.GRUPPI:
             self._pulsante(riga, nome, lambda n=nome: (scelta.update(area=n), win.destroy()), COLORE_AREA[nome],
                            BIANCO).pack(side="left", padx=4)
         self.wait_window(win)
@@ -292,6 +357,7 @@ class FinestraAssistente(tk.Toplevel):
                    if Path(f).suffix.lower() in rag.ESTENSIONI]
         messagebox.showinfo("Aggiungi documento", f"{len(copiati)} documenti copiati in:\n{destinazione}", parent=self)
         if copiati:
+            self.gruppi.pop(area, None)
             self.prepara()
 
     def aggiungi_nota(self):
@@ -305,10 +371,10 @@ class FinestraAssistente(tk.Toplevel):
         titolo = tk.Entry(win, font=("Segoe UI", 11), relief="flat", highlightbackground="#c3ccd8", highlightthickness=1)
         titolo.pack(fill="x", padx=14)
         tk.Label(win, text="Area", bg=SFONDO, font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=14, pady=(10, 2))
-        area = tk.StringVar(value=self.area)
+        area = tk.StringVar(value=self.area if self.area in rag.GRUPPI else "Generale")
         riga = tk.Frame(win, bg=SFONDO)
         riga.pack(anchor="w", padx=14)
-        for nome in rag.AREE:
+        for nome in rag.GRUPPI:
             tk.Radiobutton(riga, text=nome, variable=area, value=nome, bg=SFONDO).pack(side="left", padx=(0, 12))
         tk.Label(win, text="Testo (scrivi come lo spiegheresti a un collega)", bg=SFONDO,
                  font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=14, pady=(10, 2))
@@ -332,6 +398,7 @@ class FinestraAssistente(tk.Toplevel):
             f.write_text(f"{t}\n(Nota scritta a mano il {datetime.now():%d/%m/%Y})\n\n{contenuto}", encoding="utf-8")
             win.destroy()
             self._scrivi(f"\nNota salvata: {f}\n", "info")
+            self.gruppi.pop(area.get(), None)
             self.prepara()
         self._pulsante(pulsanti, "Salva nota", salva, VERDE, BIANCO).pack(side="right")
         self._pulsante(pulsanti, "Annulla", win.destroy, BLU_CHIARO, BLU_SCURO).pack(side="right", padx=8)

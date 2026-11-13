@@ -776,8 +776,8 @@ class App:
             spiega = None
         FinestraVerifica(self.root, campi, note, spiega)
 
-    def apri_assistente(self, area: str = "Generale") -> None:
-        """Assistente AI sui documenti; area: "OAM", "Compass" o "Generale" (tutti i documenti)."""
+    def apri_assistente(self, area: str | None = None) -> None:
+        """Assistente AI; area: "OAM", "Compass", "Generale", "Tutti" o None (sceglie l'utente nella finestra)."""
         from . import impostazioni
         from .assistente.finestra import FinestraAssistente
 

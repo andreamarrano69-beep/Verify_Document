@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import shutil
 import tempfile
 import threading
 import time
@@ -63,29 +64,44 @@ class TestAssistente(unittest.TestCase):
             base = Path(tmp) / "documenti_ai"
             (base / "OAM").mkdir(parents=True)
             (base / "Compass").mkdir()
+            (base / "Generale").mkdir()
             (base / "OAM" / "formazione.txt").write_text("Aggiornamento professionale dei collaboratori: venti ore "
                                                           "annue dal 2027. " * 10, encoding="utf-8")
             (base / "Compass" / "criteri.md").write_text("Statali: età massima a scadenza settantacinque anni. " * 10,
                                                          encoding="utf-8")
+            (base / "Generale" / "orari.txt").write_text("L'ufficio apre alle nove. " * 10, encoding="utf-8")
             cfg = rag.configurazione({"cartella_condivisa": tmp, "ollama_host": self.host})
-            cfg.indice_locale = Path(tmp) / "locale.json"
-            indice = rag.carica_indice(cfg)
-            self.assertEqual((indice.documenti("OAM"), indice.documenti("Compass"), indice.documenti("Generale")),
-                             (1, 1, 2))
-            trovati = rag.cerca(cfg, indice, "ore di aggiornamento dei collaboratori", "OAM")
+            cfg.indice_locale = Path(tmp) / "locale.npz"
+
+            # si prepara solo l'area scelta
+            prima = _OllamaFinto.vettori_calcolati
+            oam = rag.carica_indice(cfg, area="OAM")
+            n_oam = _OllamaFinto.vettori_calcolati - prima
+            self.assertEqual({p["fonte"] for p in oam.pezzi}, {"OAM/formazione.txt"})
+            self.assertEqual(n_oam, len(oam.pezzi))
+            self.assertTrue((base / ".indice_ai_oam.npz").is_file())        # indice condiviso per gli altri PC
+            self.assertFalse((base / ".indice_ai_compass.npz").exists())    # Compass non ancora preparato
+            trovati = rag.cerca(cfg, oam, "ore di aggiornamento dei collaboratori", "OAM")
             self.assertEqual({p["fonte"] for p in trovati}, {"OAM/formazione.txt"})
             self.assertEqual("".join(rag.rispondi(cfg, "quante ore?", trovati, "OAM")), "Venti ore annue.")
-            self.assertTrue((base / rag.NOME_INDICE).is_file())   # indice condiviso per gli altri PC
+
+            tutti = rag.carica_indice(cfg, area="Tutti")
+            self.assertEqual([tutti.documenti(a) for a in ("OAM", "Compass", "Generale", "Tutti")], [1, 1, 1, 3])
 
             prima = _OllamaFinto.vettori_calcolati
-            rag.carica_indice(cfg)
+            rag.carica_indice(cfg, area="Tutti")
             self.assertEqual(_OllamaFinto.vettori_calcolati, prima)        # niente ricalcolo
             time.sleep(0.15)
             (base / "OAM" / "nuova.txt").write_text("Nuova circolare sul registro dei collaboratori. " * 5, encoding="utf-8")
-            rag.carica_indice(cfg)
+            rag.carica_indice(cfg, area="Compass")
+            self.assertEqual(_OllamaFinto.vettori_calcolati, prima)        # il file OAM nuovo non tocca Compass
+            rag.carica_indice(cfg, area="OAM")
             self.assertEqual(_OllamaFinto.vettori_calcolati - prima, 1)    # solo il file nuovo
+            with self.assertRaises(FileNotFoundError):
+                shutil.rmtree(base / "Generale")
+                rag.carica_indice(cfg, area="Generale")
 
-    def test_riusa_vecchio_json_e_riprende_dopo_interruzione(self):
+    def test_riusa_vecchio_indice_e_riprende_dopo_interruzione(self):
         import json
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp) / "documenti_ai"
@@ -95,29 +111,30 @@ class TestAssistente(unittest.TestCase):
             cfg = rag.configurazione({"cartella_condivisa": tmp, "ollama_host": self.host})
             cfg.indice_locale = Path(tmp) / "locale.npz"
             firma = rag._firma(cfg)
-            # vecchio indice JSON (versione 0.13.0) con un solo file già calcolato
+            # vecchio indice unico JSON (versione 0.13.0) con un solo file già calcolato
             testi = rag.dividi_in_pezzi(rag.leggi_file(base / "OAM" / "doc0.txt"))
             vecchio = {"firma": {"versione": 1, "modello": cfg.modello_embedding, "file": firma["file"]},
                        "pezzi": [{"fonte": "OAM/doc0.txt", "testo": t} for t in testi],
                        "vettori": [[0.1] * 64 for _ in testi]}
             (base / rag.NOME_INDICE_VECCHIO).write_text(json.dumps(vecchio), encoding="utf-8")
             prima = _OllamaFinto.vettori_calcolati
-            indice = rag.carica_indice(cfg)
+            indice = rag.carica_indice(cfg, area="OAM")
             self.assertEqual(indice.documenti("OAM"), 3)
-            self.assertEqual(_OllamaFinto.vettori_calcolati - prima, 2 * len(testi))   # doc0 riusato dal vecchio JSON
-            self.assertFalse((base / rag.NOME_INDICE_VECCHIO).exists())         # vecchio file cancellato
-            self.assertTrue((base / rag.NOME_INDICE).is_file())
+            self.assertEqual(_OllamaFinto.vettori_calcolati - prima, 2 * len(testi))   # doc0 riusato
+            self.assertFalse((base / rag.NOME_INDICE_VECCHIO).exists())   # tutti i gruppi pronti: vecchio cancellato
+            indice_oam = base / ".indice_ai_oam.npz"
+            self.assertTrue(indice_oam.is_file())
 
             # salvataggio parziale (programma chiuso a metà): si riprende senza ricalcolare i file pronti
-            dati = rag._leggi_indice(base / rag.NOME_INDICE)
+            dati = rag._leggi_indice(indice_oam)
             solo_doc1 = [i for i, p in enumerate(dati["pezzi"]) if p["fonte"] == "OAM/doc1.txt"]
             parziale = {"firma": {**dati["firma"], "file": {"OAM/doc1.txt": firma["file"]["OAM/doc1.txt"]}},
                         "pezzi": [dati["pezzi"][i] for i in solo_doc1],
                         "vettori": [dati["vettori"][i] for i in solo_doc1]}
-            for p in (base / rag.NOME_INDICE, cfg.indice_locale):
+            for p in rag._file_indice(cfg, "OAM"):
                 rag._scrivi_indice(p, parziale)
             prima = _OllamaFinto.vettori_calcolati
-            self.assertEqual(rag.carica_indice(cfg).documenti("OAM"), 3)
+            self.assertEqual(rag.carica_indice(cfg, area="OAM").documenti("OAM"), 3)
             self.assertEqual(_OllamaFinto.vettori_calcolati - prima, 2 * len(testi))   # solo doc0 e doc2
 
     def test_senza_ollama(self):

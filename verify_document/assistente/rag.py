@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,9 +23,13 @@ from typing import Callable, Iterator
 
 from . import ollama_http
 
-VERSIONE_INDICE = 1
+VERSIONE_INDICE = 2
 ESTENSIONI = {".pdf", ".docx", ".txt", ".md", ".png", ".jpg", ".jpeg", ".tif", ".tiff"}
-NOME_INDICE = ".indice_ai.json"
+# indice in formato numpy compresso (vettori float16): circa 10 volte più piccolo e veloce del vecchio JSON
+NOME_INDICE = ".indice_ai.npz"
+NOME_INDICE_VECCHIO = ".indice_ai.json"   # versione 0.13.0: si riusa una volta e poi si cancella
+LOTTO_EMBEDDING = 32
+SALVA_OGNI_SECONDI = 60
 DIMENSIONE_PEZZO = 800
 SOVRAPPOSIZIONE = 150
 PEZZI_DA_USARE = 4
@@ -65,7 +70,7 @@ def configurazione(impostazioni: dict) -> Configurazione:
     return Configurazione(cartella=cartella, host=impostazioni.get("ollama_host") or "http://localhost:11434",
                           modello=impostazioni.get("modello_ai") or "qwen2.5:1.5b",
                           modello_embedding=impostazioni.get("modello_embedding") or "nomic-embed-text",
-                          indice_locale=base / "indice_ai.json")
+                          indice_locale=base / "indice_ai.npz")
 
 
 # ------------------------------------------------------------------ lettura documenti
@@ -128,59 +133,99 @@ def _firma(cfg: Configurazione) -> dict:
 
 
 def _leggi_indice(p: Path | None) -> dict | None:
+    """{"firma", "pezzi", "vettori"} dal file .npz (o dal vecchio .json); None se manca o è rovinato."""
+    import numpy as np
+
     try:
-        return json.loads(p.read_text(encoding="utf-8")) if p and p.is_file() else None
-    except (OSError, ValueError):
+        if not p or not p.is_file():
+            return None
+        with open(p, "rb") as f:
+            zip_npz = f.read(2) == b"PK"
+        if not zip_npz:   # vecchio formato JSON
+            return json.loads(p.read_text(encoding="utf-8"))
+        with np.load(p, allow_pickle=False) as z:
+            meta = json.loads(str(z["meta"]))
+            meta["vettori"] = z["vettori"].astype("float32")
+        return meta
+    except Exception:
         return None
 
 
 def _scrivi_indice(p: Path, dati: dict) -> None:
+    import numpy as np
+
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_name(p.name + ".tmp")
-        tmp.write_text(json.dumps(dati), encoding="utf-8")
+        meta = json.dumps({"firma": dati["firma"], "pezzi": dati["pezzi"]}, ensure_ascii=False)
+        vettori = np.asarray(dati["vettori"], dtype="float16")
+        with open(tmp, "wb") as f:   # con un file aperto numpy non aggiunge l'estensione .npz al nome
+            np.savez_compressed(f, meta=np.array(meta), vettori=vettori)
         os.replace(tmp, p)  # scrittura «tutta o niente»: un altro PC non legge mai un file a metà
     except OSError:
         pass
 
 
-def _calcola_vettori(cfg: Configurazione, testi: list[str], prefisso: str) -> list[list[float]]:
-    vettori = []
-    for i in range(0, len(testi), 16):
-        vettori += ollama_http.embed(cfg.host, cfg.modello_embedding, [prefisso + t for t in testi[i:i + 16]])
-    return vettori
+def _file_indice(cfg: Configurazione) -> list[Path]:
+    out = [cfg.cartella / NOME_INDICE]
+    if cfg.indice_locale:
+        out.append(cfg.indice_locale)
+    return out
+
+
+def _file_vecchi(cfg: Configurazione) -> list[Path]:
+    out = [cfg.cartella / NOME_INDICE_VECCHIO]
+    if cfg.indice_locale:
+        out.append(cfg.indice_locale.with_suffix(".json"))
+    return [p for p in out if p not in _file_indice(cfg)]
+
+
+def _durata(secondi: float) -> str:
+    minuti = int(secondi // 60)
+    return f"circa {minuti} min" if minuti >= 1 else "meno di un minuto"
 
 
 def carica_indice(cfg: Configurazione, avanzamento: Callable[[str], None] = lambda _t: None,
                   usa_ocr: bool = True) -> Indice:
-    """Indice aggiornato: riusa quello condiviso o locale se i documenti non sono cambiati, altrimenti lo ricrea."""
+    """Indice aggiornato: riusa quello condiviso o locale se i documenti non sono cambiati, altrimenti lo ricrea.
+
+    Mentre lo crea salva il lavoro ogni minuto: se il programma viene chiuso, la volta dopo riparte da lì.
+    """
     import numpy as np
 
     firma = _firma(cfg)
     if not firma["file"]:
         raise FileNotFoundError(f"Nessun documento in {cfg.cartella}. Aggiungine con «+ Documento» o «+ Nota».")
-    condiviso = cfg.cartella / NOME_INDICE
-    for p in (condiviso, cfg.indice_locale):
+    for p in _file_indice(cfg):
         dati = _leggi_indice(p)
         if dati and dati.get("firma") == firma:
             avanzamento(f"Indice caricato ({len(dati['pezzi'])} pezzi di testo).")
-            return Indice(dati["pezzi"], np.array(dati["vettori"], dtype="float32"))
+            return Indice(dati["pezzi"], np.asarray(dati["vettori"], dtype="float32"))
 
-    # ricrea, riusando i vettori dei file non cambiati
-    vecchio = _leggi_indice(condiviso) or _leggi_indice(cfg.indice_locale) or {}
-    gia = {}
-    if vecchio.get("firma", {}).get("modello") == cfg.modello_embedding:
+    # ricrea, riusando i vettori dei file non cambiati (anche da un salvataggio parziale o dal vecchio formato)
+    gia: dict[str, list] = {}
+    for p in _file_indice(cfg) + _file_vecchi(cfg):
+        vecchio = _leggi_indice(p) or {}
+        if vecchio.get("firma", {}).get("modello") != cfg.modello_embedding:
+            continue
+        file_vecchi = vecchio["firma"].get("file", {})
+        nuovi_qui: dict[str, list] = {}
         for pezzo, vettore in zip(vecchio.get("pezzi", []), vecchio.get("vettori", [])):
-            if vecchio["firma"]["file"].get(pezzo["fonte"]) == firma["file"].get(pezzo["fonte"]):
-                gia.setdefault(pezzo["fonte"], []).append((pezzo, vettore))
+            fonte = pezzo["fonte"]
+            if fonte not in gia and file_vecchi.get(fonte) == firma["file"].get(fonte):
+                nuovi_qui.setdefault(fonte, []).append((pezzo, vettore))
+        gia.update(nuovi_qui)
+        del vecchio
 
-    pezzi, vettori, nuovi = [], [], []
+    pezzi, vettori, fatti = [], [], {}
+    da_fare: list[tuple[str, list[str]]] = []
     totale = len(firma["file"])
     for n, rel in enumerate(firma["file"], start=1):
         if rel in gia:
             for pezzo, vettore in gia[rel]:
                 pezzi.append(pezzo)
                 vettori.append(vettore)
+            fatti[rel] = firma["file"][rel]
             continue
         avanzamento(f"Leggo {n}/{totale}: {rel}")
         try:
@@ -188,23 +233,43 @@ def carica_indice(cfg: Configurazione, avanzamento: Callable[[str], None] = lamb
         except Exception as e:  # file illeggibile: si salta, l'avviso resta nella barra di stato
             avanzamento(f"Non leggibile: {rel} ({e})")
             continue
-        for t in dividi_in_pezzi(testo):
-            nuovi.append({"fonte": rel, "testo": t})
+        da_fare.append((rel, dividi_in_pezzi(testo)))
 
-    if nuovi:
-        avanzamento(f"Preparo la ricerca su {len(nuovi)} pezzi di testo nuovi (la prima volta può richiedere minuti)…")
-        vettori_nuovi = _calcola_vettori(cfg, [p["testo"] for p in nuovi], "search_document: ")
-        pezzi += nuovi
-        vettori += vettori_nuovi
+    def salva(firma_da_salvare: dict) -> None:
+        dati = {"firma": firma_da_salvare, "pezzi": pezzi, "vettori": vettori}
+        for p in _file_indice(cfg):
+            _scrivi_indice(p, dati)
+
+    n_nuovi = sum(len(t) for _r, t in da_fare)
+    if n_nuovi:
+        fatti_ora, inizio, ultimo_salvataggio = 0, time.monotonic(), time.monotonic()
+        avanzamento(f"Preparo la ricerca su {n_nuovi} pezzi di testo nuovi (la prima volta può richiedere minuti)…")
+        for rel, testi in da_fare:
+            for i in range(0, len(testi), LOTTO_EMBEDDING):
+                lotto = testi[i:i + LOTTO_EMBEDDING]
+                vettori += ollama_http.embed(cfg.host, cfg.modello_embedding, ["search_document: " + t for t in lotto])
+                pezzi += [{"fonte": rel, "testo": t} for t in lotto]
+                fatti_ora += len(lotto)
+                passati = time.monotonic() - inizio
+                resto = passati / fatti_ora * (n_nuovi - fatti_ora)
+                avanzamento(f"Preparo la ricerca: {fatti_ora}/{n_nuovi} pezzi ({fatti_ora * 100 // n_nuovi}%), "
+                            f"{_durata(resto)} rimasti. Puoi chiudere: il lavoro fatto resta salvato.")
+            fatti[rel] = firma["file"][rel]
+            if time.monotonic() - ultimo_salvataggio > SALVA_OGNI_SECONDI:
+                # salvataggio parziale: firma con i soli file già pronti, così non vale come indice completo
+                salva({**firma, "file": dict(fatti)})
+                ultimo_salvataggio = time.monotonic()
     if not pezzi:
         raise ValueError("Nessun testo letto dai documenti (scansioni senza OCR?).")
 
-    dati = {"firma": firma, "pezzi": pezzi, "vettori": vettori}
-    _scrivi_indice(condiviso, dati)
-    if cfg.indice_locale:
-        _scrivi_indice(cfg.indice_locale, dati)
+    salva(firma)
+    for p in _file_vecchi(cfg):   # il vecchio indice .json (molto grande) non serve più
+        try:
+            p.unlink(missing_ok=True)
+        except OSError:
+            pass
     avanzamento(f"Indice pronto: {len({p['fonte'] for p in pezzi})} documenti.")
-    return Indice(pezzi, np.array(vettori, dtype="float32"))
+    return Indice(pezzi, np.asarray(vettori, dtype="float32"))
 
 
 # ------------------------------------------------------------------ domande
@@ -214,7 +279,7 @@ def cerca(cfg: Configurazione, indice: Indice, domanda: str, area: str = "Genera
     scelti = indice.indici_area(area)
     if not scelti:
         return []
-    q = np.array(_calcola_vettori(cfg, [domanda], "search_query: ")[0], dtype="float32")
+    q = np.array(ollama_http.embed(cfg.host, cfg.modello_embedding, ["search_query: " + domanda])[0], dtype="float32")
     m = indice.matrice[scelti]
     punteggi = m @ q / (np.linalg.norm(m, axis=1) * np.linalg.norm(q) + 1e-10)
     migliori = np.argsort(punteggi)[::-1][:PEZZI_DA_USARE]

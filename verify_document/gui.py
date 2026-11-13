@@ -294,6 +294,8 @@ class App:
         ttk.Button(azioni, text="🏦  " + breve("Criteri Compass", "Compass"), style="Accent.TButton",
                    command=self.apri_criteri)
         ttk.Button(azioni, text="🤖  " + breve("Assistente AI", "AI"), command=self.apri_assistente)
+        ttk.Button(azioni, text="📘  OAM", command=lambda: self.apri_assistente("OAM"))
+        ttk.Button(azioni, text="📗  Generale", command=lambda: self.apri_assistente("Generale"))
         ttk.Button(azioni, text="🧮  " + breve("Conteggio estinzione", "Estinzione"), command=self.apri_estinzione)
         azioni.aggiorna()
 
@@ -592,6 +594,10 @@ class App:
         ttk.Button(piede, text="⏻  Esci", style="Esci.TButton", command=self.esci).pack(side="right")
         ttk.Button(piede, text="⚙  Impostazioni", command=self.apri_impostazioni).pack(side="right", padx=8)
         ttk.Button(piede, text="🤖  Assistente AI", command=self.apri_assistente).pack(side="right")
+        ttk.Button(piede, text="📗  Generale", command=lambda: self.apri_assistente("Generale")).pack(
+            side="right", padx=(0, 8))
+        ttk.Button(piede, text="📘  OAM", command=lambda: self.apri_assistente("OAM")).pack(
+            side="right", padx=(0, 8))
         ttk.Button(piede, text="🏦  Criteri Compass", command=self.apri_criteri).pack(side="right", padx=8)
         tk.Label(piede, text=f"versione {__version__}", bg=sfondo, fg="#999999",
                  font=_f(9)).pack(side="left")
@@ -770,11 +776,12 @@ class App:
             spiega = None
         FinestraVerifica(self.root, campi, note, spiega)
 
-    def apri_assistente(self) -> None:
+    def apri_assistente(self, area: str = "Generale") -> None:
+        """Assistente AI sui documenti; area: "OAM", "Compass" o "Generale" (tutti i documenti)."""
         from . import impostazioni
         from .assistente.finestra import FinestraAssistente
 
-        FinestraAssistente(self.root, impostazioni.carica())
+        FinestraAssistente(self.root, impostazioni.carica(), area)
 
     def aggiungi(self, percorsi) -> None:
         if self.home_visibile and percorsi:  # caricati dalla Home: poi si riconosce il settore

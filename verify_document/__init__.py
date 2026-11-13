@@ -1,3 +1,3 @@
 """Verify Document – verifica locale di documenti anagrafici e reddituali."""
 
-__version__ = "0.13.2"
+__version__ = "0.13.3"

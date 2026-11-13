@@ -757,16 +757,32 @@ class App:
     def apri_estinzione(self) -> None:
         FinestraEstinzione(self.root)
 
-    def apri_criteri(self) -> None:
-        """Verifica dei criteri assuntivi Compass, compilata con i dati dei documenti aperti."""
+    def apri_criteri(self, anche_autonomo: bool = False) -> None:
+        """Verifica dei criteri assuntivi Compass, compilata con i dati dei documenti aperti.
+
+        Prima dell'esito dei criteri: affidabilità dei documenti (controlli, alterazione PDF, confronto con l'INPS).
+        Cliente autonomo: niente criteri CQS/delega, riepilogo del Modello Redditi e verifica della partita IVA.
+        """
         from . import impostazioni
-        from .criteri_compass import da_documenti, motore
-        from .criteri_compass.finestra import FinestraVerifica
+        from .criteri_compass import affidabilita, da_documenti, motore
+        from .criteri_compass.finestra import FinestraAutonomo, FinestraVerifica
+        from .settori import riconosci_settore
 
         imp = impostazioni.carica()
         motore.CARTELLA_REGOLE = imp.get("cartella_condivisa") or None
         reports = [r.report for r in self.risultati.values() if r.report]
-        campi, note = da_documenti.da_reports(reports, self.settore)
+        settore = self.settore or (riconosci_settore(reports)[0] if reports else None)
+        if settore == "Autonomo" and not anche_autonomo:
+            FinestraAutonomo(self.root, reports, apri_comunque=lambda: self.apri_criteri(anche_autonomo=True))
+            return
+        validi = self._validi()
+        confronto = None
+        if len(validi) >= 2:
+            from .confronto import confronta
+
+            confronto = confronta(validi)
+        aff = affidabilita.valuta(reports, confronto)
+        campi, note = da_documenti.da_reports(reports, None if settore == "Autonomo" else self.settore)
         if not reports:
             note = ["Nessun documento aperto: compila i campi a mano (oppure apri prima i documenti del cliente)."]
         try:
@@ -774,7 +790,7 @@ class App:
             spiega = funzione_spiega(imp)
         except Exception:  # assistente non disponibile: la verifica funziona lo stesso
             spiega = None
-        FinestraVerifica(self.root, campi, note, spiega)
+        FinestraVerifica(self.root, campi, note, spiega, aff)
 
     def apri_assistente(self, area: str | None = None) -> None:
         """Assistente AI; area: "OAM", "Compass", "Generale", "Tutti" o None (sceglie l'utente nella finestra)."""

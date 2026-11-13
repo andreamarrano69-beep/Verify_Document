@@ -40,7 +40,7 @@ def _px(n):
 
 class FinestraVerifica(tk.Toplevel):
     def __init__(self, genitore, campi_iniziali: dict | None = None, note: list[str] | None = None,
-                 spiega=None):
+                 spiega=None, affidabilita=None):
         """campi_iniziali: {campo: testo} dai documenti; spiega(testo, scrivi, fine): riassunto con l'AI."""
         super().__init__(genitore)
         self.title("Verifica criteri Compass · CQS e Deleghe")
@@ -55,6 +55,7 @@ class FinestraVerifica(tk.Toplevel):
         self.ultimo_risultato = ""
         self.iniziali = dict(campi_iniziali or {})
         self.note_iniziali = list(note or [])
+        self.affidabilita = affidabilita  # affidabilita.Affidabilita dei documenti aperti (o None)
         self._crea()
 
     # ================= INTERFACCIA =================
@@ -470,14 +471,27 @@ class FinestraVerifica(tk.Toplevel):
             messagebox.showwarning("Verifica pratica", str(e), parent=self)
             return
         self.ultimo_risultato = V.testo_risultato(calcoli, generali, esiti)
+        ok = [e.nome for e in esiti if e.livello == "OK"]
+        pre = [e.nome for e in esiti if e.livello == "PREACC"]
 
         self._scrivi("", pulisci=True)
+        aff = self.affidabilita
+        if aff is not None:
+            from .affidabilita import esito_finale
+
+            tag_finale, finale = esito_finale(aff, ok, pre, [e.nome for e in esiti if e.livello == "VERIFICA"])
+            self._scrivi("ESITO COMPLESSIVO\n", "titolo")
+            self._scrivi(f"  {finale}\n\n", tag_finale)
+            self._scrivi(f"AFFIDABILITÀ DEI DOCUMENTI: {aff.livello}\n", "titolo")
+            for tag, riga in aff.righe:
+                simbolo = {"ok": "✅", "pre": "⚠️", "ko": "❌", "nota": "ℹ️"}[tag]
+                self._scrivi(f"  {simbolo} {riga}\n", "dettaglio" if tag == "ok" else tag)
+            self._scrivi("\n")
+            self.ultimo_risultato = f"ESITO COMPLESSIVO: {finale}\n\n{aff.testo()}\n\n{self.ultimo_risultato}"
         self._scrivi("CALCOLI\n", "titolo")
         for c in calcoli:
             self._scrivi(f"  • {c}\n", "dettaglio")
-        self._scrivi("\nRIEPILOGO\n", "titolo")
-        ok = [e.nome for e in esiti if e.livello == "OK"]
-        pre = [e.nome for e in esiti if e.livello == "PREACC"]
+        self._scrivi("\nRIEPILOGO CRITERI\n", "titolo")
         ver = [e.nome for e in esiti if e.livello == "VERIFICA"]
         self._scrivi(f"  ✅ Assumibile con: {', '.join(ok) if ok else 'nessuna compagnia'}\n", "ok")
         if pre:
@@ -530,3 +544,79 @@ class FinestraVerifica(tk.Toplevel):
             self.after(0, self._scrivi, "\n")
 
         self.spiega_fn(self.ultimo_risultato, scrivi, fine)
+
+
+class FinestraAutonomo(tk.Toplevel):
+    """Cliente autonomo: niente criteri CQS/delega; riepilogo del Modello Redditi e verifica della partita IVA."""
+
+    def __init__(self, genitore, reports, apri_comunque=None):
+        import webbrowser
+
+        from .autonomi import MESSAGGIO, URL_VERIFICA_PIVA, riepilogo
+
+        super().__init__(genitore)
+        self.title("Criteri Compass · Autonomo")
+        try:
+            from ..gui import adatta_finestra
+            adatta_finestra(self, 900, 620)
+        except Exception:
+            self.geometry("900x620")
+        self.configure(bg=SFONDO)
+        alto = tk.Frame(self, bg=ARANCIO)
+        alto.pack(fill="x")
+        tk.Label(alto, text="Cliente autonomo", bg=ARANCIO, fg=BIANCO, font=("Segoe UI", 16, "bold")).pack(
+            side="left", padx=16, pady=10)
+        self._pulsante(alto, "Chiudi", self.destroy, BIANCO, ARANCIO).pack(side="right", padx=12, pady=8)
+        corpo = tk.Frame(self, bg=SFONDO)
+        corpo.pack(fill="both", expand=True, padx=14, pady=10)
+        tk.Label(corpo, text=MESSAGGIO, bg=SFONDO, fg=BLU_SCURO, font=("Segoe UI", 11, "bold"), justify="left",
+                 wraplength=_px(840)).pack(anchor="w")
+
+        righe, partite_iva = riepilogo(reports)
+        # verifica della partita IVA: il programma non la invia, apre solo la pagina ufficiale
+        piva = tk.Frame(corpo, bg=BIANCO, highlightbackground="#d5dce5", highlightthickness=1)
+        piva.pack(fill="x", pady=(10, 8))
+        if partite_iva:
+            for p in partite_iva:
+                riga = tk.Frame(piva, bg=BIANCO)
+                riga.pack(fill="x", padx=10, pady=6)
+                tk.Label(riga, text=f"Partita IVA  {p}", bg=BIANCO, fg="#111827",
+                         font=("Segoe UI", 12, "bold")).pack(side="left")
+
+                def verifica(p=p):
+                    self.clipboard_clear()
+                    self.clipboard_append(p)
+                    webbrowser.open(URL_VERIFICA_PIVA)
+
+                self._pulsante(riga, "Verifica sul sito dell'Agenzia delle Entrate", verifica, ARANCIO,
+                               BIANCO).pack(side="right")
+        else:
+            tk.Label(piva, text="Partita IVA non letta nei documenti: si può verificare comunque dal sito "
+                     "dell'Agenzia delle Entrate.", bg=BIANCO, fg=GRIGIO, font=("Segoe UI", 10)).pack(
+                side="left", padx=10, pady=6)
+            self._pulsante(piva, "Apri il sito dell'Agenzia delle Entrate", lambda: webbrowser.open(URL_VERIFICA_PIVA),
+                           ARANCIO, BIANCO).pack(side="right", padx=10, pady=6)
+        tk.Label(corpo, text="Il pulsante copia la partita IVA negli appunti e apre la pagina ufficiale «Verifica "
+                 "partita IVA»: incollala (Ctrl+V) nella pagina. Il programma non invia nessun dato all'esterno.",
+                 bg=SFONDO, fg=GRIGIO, font=("Segoe UI", 9), justify="left", wraplength=_px(840)).pack(anchor="w")
+
+        testo = tk.Text(corpo, wrap="word", relief="flat", bg=BIANCO, font=("Segoe UI", 10), padx=12, pady=10,
+                        height=12)
+        testo.pack(fill="both", expand=True, pady=(8, 8))
+        for tag, colore, peso in [("titolo", BLU_SCURO, "bold"), ("ok", VERDE, "normal"), ("ko", ROSSO, "bold"),
+                                  ("pre", GIALLO, "normal"), ("nota", "#374151", "normal")]:
+            testo.tag_configure(tag, foreground=colore, font=("Segoe UI", 10, peso))
+        for tag, riga in righe:
+            testo.insert("end", ("\n" if tag == "titolo" else "  ") + riga + "\n", tag)
+        testo.configure(state="disabled")
+        if apri_comunque is not None:
+            piede = tk.Frame(corpo, bg=SFONDO)
+            piede.pack(fill="x")
+            tk.Label(piede, text="Il cliente ha anche un lavoro dipendente o una pensione?", bg=SFONDO, fg=GRIGIO,
+                     font=("Segoe UI", 9)).pack(side="left")
+            self._pulsante(piede, "Apri comunque i criteri Compass", lambda: (self.destroy(), apri_comunque()),
+                           BIANCO, BLU_SCURO).pack(side="left", padx=8)
+
+    def _pulsante(self, genitore, testo, comando, sfondo, colore):
+        return FinestraVerifica._pulsante(self, genitore, testo, comando, sfondo, colore)
+

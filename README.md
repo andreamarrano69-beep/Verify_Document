@@ -257,6 +257,21 @@ fattibilità della cessione del quinto. I punti da verificare sono evidenziati.
 - un documento riaperto dalla cartella di un cliente prende nome e codice fiscale del cliente se nel
   documento non si leggono (es. scansioni già corrette a mano)
 
+## Criteri Compass: affidabilità dei documenti e clienti autonomi
+
+Nella finestra **🏦 Criteri Compass**, dopo «Verifica», il risultato inizia con l'**ESITO COMPLESSIVO**:
+affidabilità dei documenti + esito dei criteri, ad esempio «✅ DOCUMENTI AFFIDABILI · Criteri: assumibile con
+NET, CARDIF» oppure «❌ DOCUMENTI NON COERENTI — risolvere prima di presentare la pratica».
+L'affidabilità tiene conto dei controlli di ogni documento (quadratura, voci, contributi, codice fiscale),
+del rischio di alterazione dei PDF e dei controlli incrociati con l'estratto INPS; le trattenute in corso
+(cessioni, pignoramenti) non contano come dubbi. Nel testo copiato o riassunto dall'AI solo tipo e periodo
+dei documenti, niente nomi né codici fiscali.
+
+Cliente **autonomo**: niente criteri CQS/delega (non si applicano) ma il riepilogo del Modello Redditi
+(regime, reddito, presentazione telematica, ricevuta) e la **partita IVA** con il pulsante «Verifica sul sito
+dell'Agenzia delle Entrate»: copia la partita IVA negli appunti e apre la pagina ufficiale; il programma non
+invia nessun dato all'esterno. «Apri comunque i criteri Compass» se ha anche un lavoro dipendente o una pensione.
+
 ## Conteggio estinzione
 
 **🧮 Conteggio estinzione**: inserisci rata, decorrenza, scadenza (oppure rate totali / residue) e, se noti,

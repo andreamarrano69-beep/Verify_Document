@@ -175,6 +175,15 @@ def analizza(testo: str) -> Report:
     else:
         r.aggiungi("Codice fiscale contribuente", Esito.ATTENZIONE, "Codice fiscale non trovato")
 
+    # partita IVA del contribuente (frontespizio / quadri LM, RE, RG): non quella dell'intermediario
+    from .validators import valida_partita_iva
+
+    m = re.search(r"(?<!intermediario )(?:partita\s+iva|p\.\s?iva)(?:\s+del\s+contribuente)?\s*[:\-]?\s*(?:IT)?\s*(\d{11})\b",
+                  testo, re.IGNORECASE)
+    d["partita_iva"] = m.group(1) if m else None
+    if d["partita_iva"] and not valida_partita_iva(d["partita_iva"]):
+        r.aggiungi("Partita IVA", Esito.ERRORE, f"{d['partita_iva']} NON valida (cifra di controllo errata)")
+
     quadri = _quadri_presenti(testo)
     d["quadri_compilati"] = quadri
     regime = _determina_regime(testo, quadri)
